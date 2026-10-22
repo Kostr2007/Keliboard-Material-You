@@ -64,7 +64,9 @@ class SpringTest {
         assertEquals(value, s.value)
         assertEquals(velocity, s.velocity)
         s.step(1 / 120f)
-        assertTrue(abs(s.value - value) < 0.1f, "jump from $value to ${s.value}")
+        // no jump towards the new target: the key keeps moving with its momentum for a moment
+        assertTrue(s.value > value, "momentum lost: $value -> ${s.value}")
+        assertTrue(s.value - value <= velocity / 120f + 0.01f, "jump from $value to ${s.value}")
     }
 
     @Test fun `long pauses do not make the spring jump`() {
