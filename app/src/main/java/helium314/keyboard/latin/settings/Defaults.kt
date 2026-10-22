@@ -68,6 +68,9 @@ object Defaults {
     const val PREF_AUTOCORRECT_SHORTCUTS = true
     const val PREF_BACKSPACE_REVERTS_AUTOCORRECT = true
     const val PREF_AUTOCORRECT_CAPITALIZED_SUGGESTION = true
+    const val PREF_LEARN_REJECTED_AUTOCORRECT = true
+    const val PREF_FIX_DOUBLE_CAPS = true
+    const val PREF_COLLAPSE_REPEATED_LETTERS = true
     const val PREF_CENTER_SUGGESTION_TEXT_TO_ENTER = false
     const val PREF_SHOW_SUGGESTIONS = true
     const val PREF_ALWAYS_SHOW_SUGGESTIONS = false

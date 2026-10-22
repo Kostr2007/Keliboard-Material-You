@@ -56,12 +56,14 @@ import helium314.keyboard.latin.define.DebugFlags;
 import helium314.keyboard.latin.settings.Settings;
 import helium314.keyboard.latin.settings.SettingsValues;
 import helium314.keyboard.latin.settings.SpacingAndPunctuations;
+import helium314.keyboard.latin.suggestions.RejectedAutocorrections;
 import helium314.keyboard.latin.suggestions.SuggestionStripViewAccessor;
 import helium314.keyboard.latin.utils.AsyncResultHolder;
 import helium314.keyboard.latin.utils.DictionaryInfoUtils;
 import helium314.keyboard.latin.utils.GestureDataGatheringKt;
 import helium314.keyboard.latin.utils.InputTypeUtils;
 import helium314.keyboard.latin.utils.IntentUtils;
+import helium314.keyboard.latin.utils.KtxKt;
 import helium314.keyboard.latin.utils.Log;
 import helium314.keyboard.latin.utils.BackgroundGatheringCache;
 import helium314.keyboard.latin.utils.RecapitalizeMode;
@@ -2020,6 +2022,13 @@ public final class InputLogic {
         mConnection.deleteTextBeforeCursor(deleteLength);
         if (!TextUtils.isEmpty(committedWord)) {
             unlearnWord(committedWordString, inputTransaction.getSettingsValues(), DictionaryFacilitator.UnlearnEvent.REVERT);
+        }
+        // remember that the user doesn't want this word to be corrected, so we don't autocorrect it again
+        final SettingsValues revertSettingsValues = inputTransaction.getSettingsValues();
+        if (revertSettingsValues.mLearnRejectedAutocorrect && !revertSettingsValues.mIncognitoModeEnabled
+                && !TextUtils.isEmpty(originallyTypedWord)
+                && !TextUtils.equals(originallyTypedWord, committedWord)) {
+            RejectedAutocorrections.add(KtxKt.prefs(mLatinIME), originallyTypedWord.toString());
         }
         final String stringToCommit = originallyTypedWord +
                 (usePhantomSpace ? "" : separatorString);

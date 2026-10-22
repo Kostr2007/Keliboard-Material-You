@@ -25,6 +25,7 @@ import helium314.keyboard.settings.preferences.ListPreference
 import helium314.keyboard.settings.Setting
 import helium314.keyboard.settings.preferences.ReorderSwitchPreference
 import helium314.keyboard.settings.SearchSettingsScreen
+import helium314.keyboard.settings.Illustration
 import helium314.keyboard.settings.SettingsActivity
 import helium314.keyboard.settings.preferences.SliderPreference
 import helium314.keyboard.settings.preferences.SwitchPreference
@@ -41,27 +42,16 @@ fun PreferencesScreen(
     val b = (LocalContext.current.getActivity() as? SettingsActivity)?.prefChanged?.collectAsState()
     if ((b?.value ?: 0) < 0)
         Log.v("irrelevant", "stupid way to trigger recomposition on preference change")
-    val clipboardHistoryEnabled = prefs.getBoolean(Settings.PREF_ENABLE_CLIPBOARD_HISTORY, Defaults.PREF_ENABLE_CLIPBOARD_HISTORY)
     val items = listOf(
-        R.string.settings_category_input,
+        R.string.settings_category_popups,
+        Settings.PREF_POPUP_ON,
         Settings.PREF_SHOW_HINTS,
         if (prefs.getBoolean(Settings.PREF_SHOW_HINTS, Defaults.PREF_SHOW_HINTS))
             Settings.PREF_POPUP_KEYS_HINT_ORDER else null,
         Settings.PREF_POPUP_KEYS_ORDER,
         Settings.PREF_SHOW_POPUP_HINTS,
         Settings.PREF_SHOW_TLD_POPUP_KEYS,
-        Settings.PREF_POPUP_ON,
-        if (AudioAndHapticFeedbackManager.getInstance().hasVibrator())
-            Settings.PREF_VIBRATE_ON else null,
-        if (prefs.getBoolean(Settings.PREF_VIBRATE_ON, Defaults.PREF_VIBRATE_ON))
-            Settings.PREF_VIBRATION_DURATION_SETTINGS else null,
-        if (prefs.getBoolean(Settings.PREF_VIBRATE_ON, Defaults.PREF_VIBRATE_ON))
-            Settings.PREF_VIBRATE_IN_DND_MODE else null,
-        Settings.PREF_SOUND_ON,
-        if (prefs.getBoolean(Settings.PREF_SOUND_ON, Defaults.PREF_SOUND_ON))
-            Settings.PREF_KEYPRESS_SOUND_VOLUME else null,
-        Settings.PREF_SAVE_SUBTYPE_PER_APP,
-        Settings.PREF_SHOW_EMOJI_DESCRIPTIONS,
+        Settings.PREF_REMOVE_REDUNDANT_POPUPS,
         R.string.settings_category_additional_keys,
         Settings.PREF_SHOW_NUMBER_ROW,
         if (SubtypeSettings.getEnabledSubtypes(true).any { it.locale().language in localesWithLocalizedNumberRow })
@@ -75,19 +65,74 @@ fun PreferencesScreen(
         Settings.PREF_LANGUAGE_SWITCH_KEY,
         Settings.PREF_SHOW_EMOJI_KEY,
         Settings.PREF_SHOW_DPAD_KEY,
-        Settings.PREF_REMOVE_REDUNDANT_POPUPS,
-        R.string.settings_category_clipboard_history,
+        R.string.settings_category_input,
+        Settings.PREF_SAVE_SUBTYPE_PER_APP,
+        Settings.PREF_SHOW_EMOJI_DESCRIPTIONS,
+    )
+    SearchSettingsScreen(
+        onClickBack = onClickBack,
+        title = stringResource(R.string.settings_screen_keys),
+        settings = items,
+        illustration = Illustration.KEYS,
+        illustrationText = stringResource(R.string.hero_keys),
+    )
+}
+
+@Composable
+fun SoundVibrationScreen(
+    onClickBack: () -> Unit,
+) {
+    val prefs = LocalContext.current.prefs()
+    val b = (LocalContext.current.getActivity() as? SettingsActivity)?.prefChanged?.collectAsState()
+    if ((b?.value ?: 0) < 0)
+        Log.v("irrelevant", "stupid way to trigger recomposition on preference change")
+    val hasVibrator = AudioAndHapticFeedbackManager.getInstance().hasVibrator()
+    val vibrationOn = hasVibrator && prefs.getBoolean(Settings.PREF_VIBRATE_ON, Defaults.PREF_VIBRATE_ON)
+    val items = listOf(
+        R.string.settings_category_vibration,
+        if (hasVibrator) Settings.PREF_VIBRATE_ON else null,
+        if (vibrationOn) Settings.PREF_VIBRATION_DURATION_SETTINGS else null,
+        if (vibrationOn) Settings.PREF_VIBRATE_IN_DND_MODE else null,
+        R.string.settings_category_sound,
+        Settings.PREF_SOUND_ON,
+        if (prefs.getBoolean(Settings.PREF_SOUND_ON, Defaults.PREF_SOUND_ON))
+            Settings.PREF_KEYPRESS_SOUND_VOLUME else null,
+    )
+    SearchSettingsScreen(
+        onClickBack = onClickBack,
+        title = stringResource(R.string.settings_screen_sound_vibration),
+        settings = items,
+        illustration = Illustration.SOUND,
+        illustrationText = stringResource(R.string.hero_sound_vibration),
+    )
+}
+
+@Composable
+fun ClipboardScreen(
+    onClickBack: () -> Unit,
+) {
+    val prefs = LocalContext.current.prefs()
+    val b = (LocalContext.current.getActivity() as? SettingsActivity)?.prefChanged?.collectAsState()
+    if ((b?.value ?: 0) < 0)
+        Log.v("irrelevant", "stupid way to trigger recomposition on preference change")
+    val clipboardHistoryEnabled = prefs.getBoolean(Settings.PREF_ENABLE_CLIPBOARD_HISTORY, Defaults.PREF_ENABLE_CLIPBOARD_HISTORY)
+    val items = listOf(
         Settings.PREF_ENABLE_CLIPBOARD_HISTORY,
         if (clipboardHistoryEnabled) Settings.PREF_CLIPBOARD_HISTORY_RETENTION_TIME else null,
         if (clipboardHistoryEnabled) Settings.PREF_CLIPBOARD_HISTORY_PINNED_FIRST else null,
         if (clipboardHistoryEnabled) Settings.PREF_CLIPBOARD_USE_FILES else null,
         if (clipboardHistoryEnabled && prefs.getBoolean(Settings.PREF_CLIPBOARD_USE_FILES, Defaults.PREF_CLIPBOARD_USE_FILES))
             Settings.PREF_CLIPBOARD_FILES_SIZE_LIMIT else null,
+        R.string.settings_category_suggestions,
+        Settings.PREF_SUGGEST_CLIPBOARD_CONTENT,
+        Settings.PREF_SUGGEST_RECENT_SCREENSHOTS,
     )
     SearchSettingsScreen(
         onClickBack = onClickBack,
-        title = stringResource(R.string.settings_screen_preferences),
-        settings = items
+        title = stringResource(R.string.settings_category_clipboard_history),
+        settings = items,
+        illustration = Illustration.CLIPBOARD,
+        illustrationText = stringResource(R.string.hero_clipboard),
     )
 }
 

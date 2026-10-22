@@ -28,6 +28,8 @@ import helium314.keyboard.settings.screens.MainSettingsScreen
 import helium314.keyboard.settings.screens.PersonalDictionariesScreen
 import helium314.keyboard.settings.screens.PersonalDictionaryScreen
 import helium314.keyboard.settings.screens.PreferencesScreen
+import helium314.keyboard.settings.screens.SoundVibrationScreen
+import helium314.keyboard.settings.screens.ClipboardScreen
 import helium314.keyboard.settings.screens.SecondaryLayoutScreen
 import helium314.keyboard.settings.screens.SubtypeScreen
 import helium314.keyboard.settings.screens.TextCorrectionScreen
@@ -70,6 +72,8 @@ fun SettingsNavHost(
                 onClickAbout = { navController.navigate(SettingsDestination.About) },
                 onClickTextCorrection = { navController.navigate(SettingsDestination.TextCorrection) },
                 onClickPreferences = { navController.navigate(SettingsDestination.Preferences) },
+                onClickSoundVibration = { navController.navigate(SettingsDestination.SoundVibration) },
+                onClickClipboard = { navController.navigate(SettingsDestination.Clipboard) },
                 onClickToolbar = { navController.navigate(SettingsDestination.Toolbar) },
                 onClickGestureTyping = { navController.navigate(SettingsDestination.GestureTyping) },
                 onClickDataGathering = { navController.navigate(SettingsDestination.DataGathering) },
@@ -89,6 +93,12 @@ fun SettingsNavHost(
         }
         composable(SettingsDestination.Preferences) {
             PreferencesScreen(onClickBack = ::goBack)
+        }
+        composable(SettingsDestination.SoundVibration) {
+            SoundVibrationScreen(onClickBack = ::goBack)
+        }
+        composable(SettingsDestination.Clipboard) {
+            ClipboardScreen(onClickBack = ::goBack)
         }
         composable(SettingsDestination.Toolbar) {
             ToolbarScreen(onClickBack = ::goBack)
@@ -149,6 +159,8 @@ object SettingsDestination {
     const val About = "about"
     const val TextCorrection = "text_correction"
     const val Preferences = "preferences"
+    const val SoundVibration = "sound_vibration"
+    const val Clipboard = "clipboard"
     const val Toolbar = "toolbar"
     const val GestureTyping = "gesture_typing"
     const val DataGathering = "data_gathering" // remove when data gathering phase is done (end of 2026 latest)

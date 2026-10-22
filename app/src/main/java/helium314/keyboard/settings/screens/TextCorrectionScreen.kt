@@ -31,6 +31,8 @@ import helium314.keyboard.latin.utils.getActivity
 import helium314.keyboard.latin.utils.prefs
 import helium314.keyboard.latin.utils.NextScreenIcon
 import helium314.keyboard.settings.SearchSettingsScreen
+import helium314.keyboard.settings.Illustration
+import helium314.keyboard.latin.suggestions.RejectedAutocorrections
 import helium314.keyboard.settings.Setting
 import helium314.keyboard.settings.SettingsActivity
 import helium314.keyboard.settings.SettingsDestination
@@ -59,17 +61,47 @@ fun TextCorrectionScreen(
     val suggestionsVisible = Settings.readToolbarMode(prefs).let { it == ToolbarMode.SUGGESTION_STRIP || it == ToolbarMode.EXPANDABLE }
     val suggestionsEnabled = suggestionsVisible && prefs.getBoolean(Settings.PREF_SHOW_SUGGESTIONS, Defaults.PREF_SHOW_SUGGESTIONS)
     val gestureEnabled = JniUtils.sHaveGestureLib && prefs.getBoolean(Settings.PREF_GESTURE_INPUT, Defaults.PREF_GESTURE_INPUT)
+    val personalizedDicts = prefs.getBoolean(Settings.PREF_KEY_USE_PERSONALIZED_DICTS, Defaults.PREF_KEY_USE_PERSONALIZED_DICTS)
     val items = listOf(
-        SettingsWithoutKey.EDIT_PERSONAL_DICTIONARY,
         R.string.settings_category_correction,
-        Settings.PREF_BLOCK_POTENTIALLY_OFFENSIVE,
         Settings.PREF_AUTO_CORRECTION,
-        if (autocorrectEnabled) Settings.PREF_MORE_AUTO_CORRECTION else null,
-        if (autocorrectEnabled) Settings.PREF_AUTOCORRECT_SHORTCUTS else null,
-        if (autocorrectEnabled) Settings.PREF_AUTOCORRECT_CAPITALIZED_SUGGESTION else null,
         if (autocorrectEnabled) Settings.PREF_AUTO_CORRECT_CONFIDENCE else null,
+        if (autocorrectEnabled) Settings.PREF_MORE_AUTO_CORRECTION else null,
         if (autocorrectEnabled) Settings.PREF_BACKSPACE_REVERTS_AUTOCORRECT else null,
+        if (autocorrectEnabled && prefs.getBoolean(Settings.PREF_BACKSPACE_REVERTS_AUTOCORRECT, Defaults.PREF_BACKSPACE_REVERTS_AUTOCORRECT))
+            Settings.PREF_LEARN_REJECTED_AUTOCORRECT else null,
+        if (autocorrectEnabled && RejectedAutocorrections.count() > 0)
+            SettingsWithoutKey.FORGET_REJECTED_AUTOCORRECT else null,
+        if (autocorrectEnabled) Settings.PREF_AUTOCORRECT_SHORTCUTS else null,
+        Settings.PREF_COLLAPSE_REPEATED_LETTERS,
+        Settings.PREF_BLOCK_POTENTIALLY_OFFENSIVE,
+        R.string.settings_category_capitalization,
         Settings.PREF_AUTO_CAP,
+        Settings.PREF_FIX_DOUBLE_CAPS,
+        if (autocorrectEnabled) Settings.PREF_AUTOCORRECT_CAPITALIZED_SUGGESTION else null,
+        R.string.settings_category_suggestions,
+        if (suggestionsVisible) Settings.PREF_SHOW_SUGGESTIONS else null,
+        Settings.PREF_BIGRAM_PREDICTIONS,
+        if (suggestionsEnabled) Settings.PREF_ALWAYS_SHOW_SUGGESTIONS else null,
+        if (suggestionsEnabled && prefs.getBoolean(Settings.PREF_ALWAYS_SHOW_SUGGESTIONS, Defaults.PREF_ALWAYS_SHOW_SUGGESTIONS))
+            Settings.PREF_ALWAYS_SHOW_SUGGESTIONS_EXCEPT_WEB_TEXT else null,
+        if (suggestionsEnabled) Settings.PREF_CENTER_SUGGESTION_TEXT_TO_ENTER else null,
+        Settings.PREF_SUGGEST_PUNCTUATION,
+        if (prefs.getBoolean(Settings.PREF_SUGGEST_PUNCTUATION, Defaults.PREF_SUGGEST_PUNCTUATION))
+            Settings.PREF_PUNCTUATION_SUGGESTIONS else null,
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+            Settings.PREF_SPELLCHECK_SUGGEST else null,
+        R.string.settings_category_learning,
+        Settings.PREF_KEY_USE_PERSONALIZED_DICTS,
+        if (personalizedDicts) Settings.PREF_ADD_TO_PERSONAL_DICTIONARY else null,
+        SettingsWithoutKey.EDIT_PERSONAL_DICTIONARY,
+        R.string.settings_category_suggestion_sources,
+        Settings.PREF_USE_CONTACTS,
+        Settings.PREF_USE_APPS,
+        if (suggestionsEnabled || autocorrectEnabled) Settings.PREF_SUGGEST_EMOJIS else null,
+        if (suggestionsEnabled || autocorrectEnabled) Settings.PREF_INLINE_EMOJI_SEARCH else null,
+        Settings.PREF_SUGGEST_CLIPBOARD_CONTENT,
+        Settings.PREF_SUGGEST_RECENT_SCREENSHOTS,
         R.string.settings_category_space,
         Settings.PREF_KEY_USE_DOUBLE_SPACE_PERIOD,
         Settings.PREF_AUTOSPACE_AFTER_PUNCTUATION,
@@ -77,32 +109,13 @@ fun TextCorrectionScreen(
         if (gestureEnabled) Settings.PREF_AUTOSPACE_BEFORE_GESTURE_TYPING else null,
         if (gestureEnabled) Settings.PREF_AUTOSPACE_AFTER_GESTURE_TYPING else null,
         Settings.PREF_SHIFT_REMOVES_AUTOSPACE,
-        R.string.settings_category_suggestions,
-        if (suggestionsVisible) Settings.PREF_SHOW_SUGGESTIONS else null,
-        if (suggestionsEnabled) Settings.PREF_ALWAYS_SHOW_SUGGESTIONS else null,
-        if (suggestionsEnabled && prefs.getBoolean(Settings.PREF_ALWAYS_SHOW_SUGGESTIONS, Defaults.PREF_ALWAYS_SHOW_SUGGESTIONS))
-            Settings.PREF_ALWAYS_SHOW_SUGGESTIONS_EXCEPT_WEB_TEXT else null,
-        if (suggestionsEnabled) Settings.PREF_CENTER_SUGGESTION_TEXT_TO_ENTER else null,
-        if (suggestionsEnabled || autocorrectEnabled) Settings.PREF_SUGGEST_EMOJIS else null,
-        if (suggestionsEnabled || autocorrectEnabled) Settings.PREF_INLINE_EMOJI_SEARCH else null,
-        Settings.PREF_KEY_USE_PERSONALIZED_DICTS,
-        Settings.PREF_BIGRAM_PREDICTIONS,
-        Settings.PREF_SUGGEST_PUNCTUATION,
-        if (prefs.getBoolean(Settings.PREF_SUGGEST_PUNCTUATION, Defaults.PREF_SUGGEST_PUNCTUATION))
-            Settings.PREF_PUNCTUATION_SUGGESTIONS else null,
-        Settings.PREF_SUGGEST_CLIPBOARD_CONTENT,
-        Settings.PREF_SUGGEST_RECENT_SCREENSHOTS,
-        Settings.PREF_USE_CONTACTS,
-        Settings.PREF_USE_APPS,
-        if (prefs.getBoolean(Settings.PREF_KEY_USE_PERSONALIZED_DICTS, Defaults.PREF_KEY_USE_PERSONALIZED_DICTS))
-            Settings.PREF_ADD_TO_PERSONAL_DICTIONARY else null,
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-            Settings.PREF_SPELLCHECK_SUGGEST else null,
     )
     SearchSettingsScreen(
         onClickBack = onClickBack,
         title = stringResource(R.string.settings_screen_correction),
-        settings = items
+        settings = items,
+        illustration = Illustration.SUGGESTIONS,
+        illustrationText = stringResource(R.string.hero_correction),
     )
 }
 
@@ -137,6 +150,37 @@ fun createCorrectionSettings(context: Context) = listOf(
         R.string.auto_correct_capitalized_suggestions, R.string.auto_correct_capitalized_suggestions_description
     ) {
         SwitchPreference(it, Defaults.PREF_AUTOCORRECT_CAPITALIZED_SUGGESTION)
+    },
+    Setting(context, Settings.PREF_LEARN_REJECTED_AUTOCORRECT,
+        R.string.learn_rejected_autocorrect, R.string.learn_rejected_autocorrect_summary
+    ) {
+        SwitchPreference(it, Defaults.PREF_LEARN_REJECTED_AUTOCORRECT)
+    },
+    Setting(context, SettingsWithoutKey.FORGET_REJECTED_AUTOCORRECT, R.string.forget_rejected_autocorrect) { setting ->
+        val ctx = LocalContext.current
+        var showConfirmDialog by rememberSaveable { mutableStateOf(false) }
+        Preference(
+            name = setting.title,
+            description = stringResource(R.string.forget_rejected_autocorrect_summary, RejectedAutocorrections.count()),
+            onClick = { showConfirmDialog = true }
+        )
+        if (showConfirmDialog)
+            ConfirmationDialog(
+                onDismissRequest = { showConfirmDialog = false },
+                onConfirmed = {
+                    RejectedAutocorrections.clear(ctx.prefs())
+                    (ctx.getActivity() as? SettingsActivity)?.prefChanged()
+                },
+                content = { Text(setting.title + "?") }
+            )
+    },
+    Setting(context, Settings.PREF_FIX_DOUBLE_CAPS, R.string.fix_double_caps, R.string.fix_double_caps_summary) {
+        SwitchPreference(it, Defaults.PREF_FIX_DOUBLE_CAPS)
+    },
+    Setting(context, Settings.PREF_COLLAPSE_REPEATED_LETTERS,
+        R.string.collapse_repeated_letters, R.string.collapse_repeated_letters_summary
+    ) {
+        SwitchPreference(it, Defaults.PREF_COLLAPSE_REPEATED_LETTERS)
     },
     Setting(context, Settings.PREF_AUTO_CORRECT_CONFIDENCE, R.string.auto_correction_confidence) { setting ->
         SliderPreference(

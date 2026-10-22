@@ -1,3 +1,43 @@
+# KeliBoard Material You
+
+> A Material 3 Expressive (Material You) rework of [KeliBoard](https://github.com/GPLaider/KeliBoard).
+
+**This is a modified version of KeliBoard.** It is distributed under the same license, the
+[GNU General Public License v3.0](LICENSE), and keeps all copyright and license notices of KeliBoard,
+HeliBoard, OpenBoard and AOSP LatinIME. Modifications were made in October 2026 by
+[kostr2007](https://github.com/Kostr2007) and are listed below. The full source code of every build
+is available in this repository.
+
+Changes were written with the help of an AI assistant (Claude) and reviewed by the repository owner,
+see [AI_USAGE.md](AI_USAGE.md).
+
+## What is different from KeliBoard
+
+### Material 3 Expressive settings
+- Grouped, rounded setting cards in the style of Android 16, large collapsing titles and
+  M3 Expressive shapes ("cookie", "flower", "clover") for icons.
+- Illustrations on every settings screen, drawn in code with the dynamic (wallpaper) colors,
+  so they always match the system theme in light and dark mode.
+- New start screen with keyboard status, a "try the keyboard" field and settings sorted into
+  *Typing*, *Keyboard*, *Look & feel* and *System*.
+- Settings re-sorted: the old *Preferences* screen is split into *Keys & input*,
+  *Sound & vibration* and *Clipboard history*; *Text correction*, *Appearance* and *Advanced*
+  are organized into clear categories.
+- A full tonal color scheme on Android versions without dynamic colors, and a redesigned setup wizard.
+
+### Smarter typing
+- **Remember undone corrections**: when you undo an autocorrection with backspace, that word is not
+  corrected again (can be reset in the settings).
+- **Fix TWo INitial CApitals**: "HEllo" is corrected to "Hello", abbreviations like "IDs" are kept.
+- **Understand stretched words**: "sooooo" or "дааааа" suggest "so" and "да".
+
+The application ID is `io.github.kostr2007.keliboard.materialyou`, so it can be installed next to
+KeliBoard. Settings can be moved between them with backup and restore.
+
+---
+
+_Original KeliBoard README:_
+
 # KeliBoard
 
 > **HeliBoard, refined.**

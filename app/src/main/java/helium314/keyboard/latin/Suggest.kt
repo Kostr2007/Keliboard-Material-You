@@ -20,6 +20,8 @@ import helium314.keyboard.latin.define.DecoderSpecificConstants.SHOULD_REMOVE_PR
 import helium314.keyboard.latin.dictionary.Dictionary
 import helium314.keyboard.latin.settings.Settings
 import helium314.keyboard.latin.settings.SettingsValuesForSuggestion
+import helium314.keyboard.latin.suggestions.RejectedAutocorrections
+import helium314.keyboard.latin.suggestions.SmartCorrections
 import helium314.keyboard.latin.suggestions.SuggestionStripView
 import helium314.keyboard.latin.utils.AutoCorrectionUtils
 import helium314.keyboard.latin.utils.Log
@@ -91,8 +93,10 @@ class Suggest(private val mDictionaryFacilitator: DictionaryFacilitator) {
         val typedWordFirstOccurrenceWordInfo = suggestionsContainer.firstOrNull { it.mWord == capitalizedTypedWord }
         val firstOccurrenceOfTypedWordInSuggestions = SuggestedWordInfo.removeDupsAndTypedWord(capitalizedTypedWord, suggestionsContainer)
         makeFirstTwoSuggestionsNonEmoji(suggestionsContainer)
+        val smartCorrection = if (resultsArePredictions) null
+            else addSmartCorrections(typedWordString, capsMode, suggestionsContainer)
 
-        val (allowsToBeAutoCorrected, hasAutoCorrection) = shouldBeAutoCorrected(
+        val (allowsToBeAutoCorrected, hasRegularAutoCorrection) = shouldBeAutoCorrected(
             trailingSingleQuotesCount,
             capitalizedTypedWord,
             suggestionsContainer.firstOrNull(),
@@ -109,6 +113,14 @@ class Suggest(private val mDictionaryFacilitator: DictionaryFacilitator) {
             firstOccurrenceOfTypedWordInSuggestions,
             typedWordFirstOccurrenceWordInfo
         )
+        val hasAutoCorrection = when {
+            // the user undid an autocorrection of this word before, so don't do it again
+            hasRegularAutoCorrection && Settings.getValues().mLearnRejectedAutocorrect
+                && RejectedAutocorrections.contains(typedWordString) -> false
+            smartCorrection == SmartCorrectionType.DOUBLE_CAPS -> isCorrectionEnabled && wordComposer.isComposingWord
+                && !wordComposer.isResumed && !RejectedAutocorrections.contains(typedWordString)
+            else -> hasRegularAutoCorrection
+        }
         val typedWordInfo = SuggestedWordInfo(typedWordString, "", SuggestedWordInfo.MAX_SCORE,
             SuggestedWordInfo.KIND_TYPED, typedWordFirstOccurrenceWordInfo?.mSourceDict ?: Dictionary.DICTIONARY_USER_TYPED,
             SuggestedWordInfo.NOT_AN_INDEX , SuggestedWordInfo.NOT_A_CONFIDENCE)
@@ -270,6 +282,43 @@ class Suggest(private val mDictionaryFacilitator: DictionaryFacilitator) {
         return allowsToBeAutoCorrected to hasAutoCorrection
     }
 
+    private enum class SmartCorrectionType { DOUBLE_CAPS, REPEATED_LETTERS }
+
+    /**
+     * Adds suggestions the dictionary can't find on its own: "HEllo" -> "Hello" and "sooooo" -> "so".
+     * The suggestion is put first, returns which kind of suggestion was added (if any).
+     */
+    private fun addSmartCorrections(typedWord: String, capsMode: CapsMode, suggestions: ArrayList<SuggestedWordInfo>): SmartCorrectionType? {
+        if (typedWord.length < 3) return null
+        val settings = Settings.getValues()
+        val locale = mDictionaryFacilitator.mainLocale
+        fun isValid(word: String) = mDictionaryFacilitator.isValidSpellingWord(word)
+            || mDictionaryFacilitator.isValidSpellingWord(word.lowercase(locale))
+        fun putFirst(word: String) {
+            val score = (suggestions.firstOrNull()?.mScore ?: SMART_CORRECTION_SCORE).coerceAtLeast(SMART_CORRECTION_SCORE)
+            suggestions.removeAll { it.mWord.equals(word, ignoreCase = true) }
+            suggestions.add(0, SuggestedWordInfo(word, "", if (score == Int.MAX_VALUE) score else score + 1,
+                SuggestedWordInfo.KIND_CORRECTION or SuggestedWordInfo.KIND_FLAG_APPROPRIATE_FOR_AUTO_CORRECTION,
+                Dictionary.DICTIONARY_USER_TYPED, SuggestedWordInfo.NOT_AN_INDEX, SuggestedWordInfo.NOT_A_CONFIDENCE))
+        }
+
+        if (settings.mFixDoubleCaps) {
+            val fixed = SmartCorrections.fixDoubleCaps(typedWord, locale)
+            if (fixed != null && !isValid(typedWord) && isValid(fixed)) {
+                putFirst(fixed)
+                return SmartCorrectionType.DOUBLE_CAPS
+            }
+        }
+        if (settings.mCollapseRepeatedLetters && !isValid(typedWord)) {
+            val candidate = SmartCorrections.collapseRepeatedLetters(typedWord).firstOrNull { isValid(it) }
+            if (candidate != null) {
+                putFirst(capitalize(candidate, capsMode, locale))
+                return SmartCorrectionType.REPEATED_LETTERS
+            }
+        }
+        return null
+    }
+
     private fun isSingleDigitLetterSubstitution(typedWord: String, suggestedWord: String?): Boolean {
         if (suggestedWord == null) return false
         val typed = typedWord.codePoints().toArray()
@@ -391,6 +440,9 @@ class Suggest(private val mDictionaryFacilitator: DictionaryFacilitator) {
 
         // Close to -2**31
         private const val SUPPRESS_SUGGEST_THRESHOLD = -2000000000
+
+        // score for suggestions added by addSmartCorrections, similar to a frequent dictionary word
+        private const val SMART_CORRECTION_SCORE = 1000000
 
         private const val MAXIMUM_AUTO_CORRECT_LENGTH_FOR_GERMAN = 12
         // TODO: should we add Finnish here?
