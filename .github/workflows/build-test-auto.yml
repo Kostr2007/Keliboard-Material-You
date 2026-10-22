@@ -8,6 +8,9 @@ on:
 #    branches-ignore: [ main ]
 #    paths:
 #      - 'app/**'
+  push:
+    paths:
+      - 'app/src/**'
   pull_request:
     paths:
       - 'app/src/main/java**'
