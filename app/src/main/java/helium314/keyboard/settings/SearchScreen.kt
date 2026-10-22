@@ -14,7 +14,14 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -26,12 +33,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -52,13 +57,16 @@ import helium314.keyboard.latin.R
 import helium314.keyboard.latin.utils.BackButton
 import helium314.keyboard.latin.utils.CloseIcon
 import helium314.keyboard.latin.utils.SearchIcon
-import helium314.keyboard.settings.preferences.PreferenceCategory
+import helium314.keyboard.settings.preferences.SettingsGroup
+import helium314.keyboard.settings.preferences.SettingsGroupItem
 
 @Composable
 fun SearchSettingsScreen(
     onClickBack: () -> Unit,
     title: String,
     settings: List<Any?>,
+    illustration: Illustration? = null,
+    illustrationText: String? = null,
     content: @Composable (ColumnScope.() -> Unit)? = null // overrides settings if not null
 ) {
     SearchScreen(
@@ -73,41 +81,47 @@ fun SearchSettingsScreen(
                     Column(
                         Modifier.verticalScroll(rememberScrollState()).then(Modifier.padding(innerPadding))
                     ) {
-                        settings.forEach {
-                            if (it is Int) {
-                                PreferenceCategory(stringResource(it))
-                            } else {
-                                // this only animates appearing prefs
-                                // a solution would be using a list(visible to key)
-                                AnimatedVisibility(visible = it != null) {
-                                    if (it != null)
-                                        SettingsActivity.settingsContainer[it]?.Preference()
-                                }
-                            }
+                        if (illustration != null)
+                            HeroIllustration(illustration, illustrationText)
+                        // settings are a flat list of category titles (string resource ids) followed by setting keys,
+                        // null is used for settings that are currently not shown
+                        groupSettings(settings).forEach { (titleRes, keys) ->
+                            SettingsGroup(
+                                title = titleRes?.let { stringResource(it) },
+                                itemCount = keys.size,
+                            ) { SettingsActivity.settingsContainer[keys[it]]?.Preference() }
                         }
+                        Spacer(Modifier.height(24.dp))
                     }
                     // lazyColumn has janky scroll for a while (not sure why compose gets smoother after a while)
                     // maybe related to unnecessary recompositions? but even for just displaying text it's there
                     // didn't manage to improve things with @Immutable list wrapper and other lazy list hints
                     // so for now: just use "normal" Column
                     //  even though it takes up to ~50% longer to load it's much better UX
-                    //  and the missing appear animations could be added
-    //                LazyColumn {
-    //                    items(prefs.filterNotNull(), key = { it }) {
-    //                        Box(Modifier.animateItem()) {
-    //                            if (it is Int)
-    //                                PreferenceCategory(stringResource(it))
-    //                            else
-    //                                SettingsActivity.settingsContainer[it]!!.Preference()
-    //                        }
-    //                    }
-    //                }
                 }
             }
         },
         filteredItems = { SettingsActivity.settingsContainer.filter(it) },
         itemContent = { it.Preference() }
     )
+}
+
+/** Splits the flat list of category titles and keys into groups, dropping hidden (null) settings and empty groups. */
+private fun groupSettings(settings: List<Any?>): List<Pair<Int?, List<Any>>> {
+    val groups = mutableListOf<Pair<Int?, List<Any>>>()
+    var title: Int? = null
+    var current = mutableListOf<Any>()
+    settings.forEach {
+        if (it is Int) {
+            if (current.isNotEmpty()) groups.add(title to current)
+            title = it
+            current = mutableListOf()
+        } else if (it != null) {
+            current.add(it)
+        }
+    }
+    if (current.isNotEmpty()) groups.add(title to current)
+    return groups
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -119,6 +133,7 @@ fun <T: Any?> SearchScreen(
     itemContent: @Composable (T) -> Unit,
     icon: @Composable (() -> Unit)? = null,
     menu: List<Pair<String, () -> Unit>>? = null,
+    header: @Composable (() -> Unit)? = null, // shown above the items if there is no search term
     content: @Composable (ColumnScope.() -> Unit)? = null,
 ) {
     // searchText and showSearch should have the same remember or rememberSaveable
@@ -126,9 +141,11 @@ fun <T: Any?> SearchScreen(
     // keyboard in unexpected situations such as going back from another screen, which is rather annoying
     var searchText by remember { mutableStateOf(TextFieldValue()) }
     var showSearch by remember { mutableStateOf(false) }
+    // large title that collapses into a normal top bar when scrolling (Material 3 Expressive style)
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))
     { innerPadding ->
-        Column(Modifier.fillMaxSize().padding(innerPadding)) {
+        Column(Modifier.fillMaxSize().padding(innerPadding).nestedScroll(scrollBehavior.nestedScrollConnection)) {
 
             fun setShowSearch(value: Boolean) {
                 showSearch = value
@@ -138,57 +155,61 @@ fun <T: Any?> SearchScreen(
                 if (showSearch || searchText.text.isNotEmpty()) setShowSearch(false)
                 else onClickBack()
             }
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainer,
-            ) {
-                Column {
-                    TopAppBar(
-                        title = title,
-                        windowInsets = WindowInsets(0),
-                        navigationIcon = {
-                            BackButton {
-                                if (showSearch) setShowSearch(false)
-                                else onClickBack()
-                            }
-                        },
-                        actions = {
-                            if (icon == null)
-                                IconButton(onClick = { setShowSearch(!showSearch) }) { SearchIcon() }
-                            else
-                                icon()
-                            if (menu != null)
-                                Box {
-                                    var showMenu by remember { mutableStateOf(false) }
-                                    IconButton(
-                                        onClick = { showMenu = true }
-                                    ) { Icon(painterResource(R.drawable.ic_arrow_left), "menu", Modifier.rotate(-90f)) }
-                                    DropdownMenu(
-                                        expanded = showMenu,
-                                        onDismissRequest = { showMenu = false }
-                                    ) {
-                                        menu.forEach {
-                                            DropdownMenuItem(
-                                                text = { Text(it.first) },
-                                                onClick = { showMenu = false; it.second() }
-                                            )
-                                        }
+            Column {
+                LargeTopAppBar(
+                    title = title,
+                    windowInsets = WindowInsets(0),
+                    scrollBehavior = scrollBehavior,
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background,
+                        scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ),
+                    navigationIcon = {
+                        BackButton {
+                            if (showSearch) setShowSearch(false)
+                            else onClickBack()
+                        }
+                    },
+                    actions = {
+                        if (icon == null)
+                            IconButton(onClick = { setShowSearch(!showSearch) }) { SearchIcon() }
+                        else
+                            icon()
+                        if (menu != null)
+                            Box {
+                                var showMenu by remember { mutableStateOf(false) }
+                                IconButton(
+                                    onClick = { showMenu = true }
+                                ) { Icon(painterResource(R.drawable.ic_arrow_left), "menu", Modifier.rotate(-90f)) }
+                                DropdownMenu(
+                                    expanded = showMenu,
+                                    onDismissRequest = { showMenu = false }
+                                ) {
+                                    menu.forEach {
+                                        DropdownMenuItem(
+                                            text = { Text(it.first) },
+                                            onClick = { showMenu = false; it.second() }
+                                        )
                                     }
                                 }
-                        },
+                            }
+                    },
+                )
+                ExpandableSearchField(
+                    expanded = showSearch,
+                    onDismiss = { setShowSearch(false) },
+                    search = searchText,
+                    onSearchChange = { searchText = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
                     )
-                    ExpandableSearchField(
-                        expanded = showSearch,
-                        onDismiss = { setShowSearch(false) },
-                        search = searchText,
-                        onSearchChange = { searchText = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surface
-                        )
-                    )
-                }
+                )
             }
             CompositionLocalProvider(LocalTextStyle provides MaterialTheme.typography.bodyLarge) {
                 if (searchText.text.isBlank() && content != null) {
@@ -201,9 +222,15 @@ fun <T: Any?> SearchScreen(
                         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)
                     ) { innerPadding ->
                         LazyColumn(contentPadding = innerPadding) {
-                            items(items) {
-                                itemContent(it)
+                            if (header != null && searchText.text.isBlank())
+                                item { header() }
+                            item { Spacer(Modifier.height(8.dp)) }
+                            itemsIndexed(items) { index, item ->
+                                Box(Modifier.padding(horizontal = 16.dp)) {
+                                    SettingsGroupItem(index, items.size) { itemContent(item) }
+                                }
                             }
+                            item { Spacer(Modifier.height(24.dp)) }
                         }
                     }
                 }
@@ -231,6 +258,7 @@ fun ExpandableSearchField(
     AnimatedVisibility(visible = expanded, modifier = Modifier.fillMaxWidth()) {
         TextField(
             value = search,
+            shape = CircleShape,
             onValueChange = onSearchChange,
             modifier = modifier.focusRequester(focusRequester),
             leadingIcon = { SearchIcon() },

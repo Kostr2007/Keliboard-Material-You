@@ -44,6 +44,8 @@ import helium314.keyboard.latin.utils.getActivity
 import helium314.keyboard.latin.utils.locale
 import helium314.keyboard.latin.utils.prefs
 import helium314.keyboard.settings.SearchScreen
+import helium314.keyboard.settings.HeroIllustration
+import helium314.keyboard.settings.Illustration
 import helium314.keyboard.settings.SettingsActivity
 import helium314.keyboard.settings.SettingsDestination
 import helium314.keyboard.latin.utils.Theme
@@ -63,15 +65,12 @@ fun LanguageScreen(
     val enabledSubtypes = SubtypeSettings.getEnabledSubtypes()
     SearchScreen(
         onClickBack = onClickBack,
-        title = {
-            Column {
-                Text(stringResource(R.string.language_and_layouts_title))
-                Text(stringResource(
-                    R.string.text_tap_languages),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+        title = { Text(stringResource(R.string.language_and_layouts_title)) },
+        header = {
+            HeroIllustration(
+                Illustration.LANGUAGES,
+                stringResource(R.string.hero_languages) + "\n" + stringResource(R.string.text_tap_languages)
+            )
         },
         filteredItems = { term ->
             sortedSubtypes.filter { subtype ->

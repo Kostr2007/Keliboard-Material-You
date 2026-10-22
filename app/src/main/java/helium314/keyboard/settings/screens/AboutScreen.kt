@@ -36,6 +36,7 @@ import helium314.keyboard.settings.SettingsWithoutKey
 import helium314.keyboard.settings.Setting
 import helium314.keyboard.settings.preferences.Preference
 import helium314.keyboard.settings.SearchSettingsScreen
+import helium314.keyboard.settings.Illustration
 import helium314.keyboard.settings.SettingsActivity
 import helium314.keyboard.latin.utils.Theme
 import helium314.keyboard.latin.utils.previewDark
@@ -63,7 +64,9 @@ fun AboutScreen(
     SearchSettingsScreen(
         onClickBack = onClickBack,
         title = stringResource(R.string.settings_screen_about),
-        settings = items
+        settings = items,
+        illustration = Illustration.ABOUT,
+        illustrationText = stringResource(R.string.hero_about),
     )
 }
 

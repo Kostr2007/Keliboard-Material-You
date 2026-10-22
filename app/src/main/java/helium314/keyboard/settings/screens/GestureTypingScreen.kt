@@ -18,6 +18,7 @@ import helium314.keyboard.latin.utils.getActivity
 import helium314.keyboard.latin.utils.prefs
 import helium314.keyboard.settings.Setting
 import helium314.keyboard.settings.SearchSettingsScreen
+import helium314.keyboard.settings.Illustration
 import helium314.keyboard.settings.SettingsActivity
 import helium314.keyboard.settings.preferences.SliderPreference
 import helium314.keyboard.settings.preferences.SwitchPreference
@@ -55,7 +56,9 @@ fun GestureTypingScreen(
     SearchSettingsScreen(
         onClickBack = onClickBack,
         title = stringResource(R.string.settings_screen_gesture),
-        settings = items
+        settings = items,
+        illustration = Illustration.GESTURE,
+        illustrationText = stringResource(R.string.hero_gesture),
     )
 }
 

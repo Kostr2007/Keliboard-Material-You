@@ -12,11 +12,11 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "io.github.gplaider.keliboard"
+        applicationId = "io.github.kostr2007.keliboard.materialyou"
         minSdk = 21
         targetSdk = 36
         versionCode = 4019
-        versionName = "4.0.1"
+        versionName = "4.0.1-you1"
         ndk {
             abiFilters.clear()
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
@@ -67,7 +67,7 @@ android {
             }
             variant.outputs.forEach { output ->
                 if (output is com.android.build.api.variant.impl.VariantOutputImpl) {
-                    output.outputFileName = "KeliBoard_${defaultConfig.versionName}-${variant.buildType}.apk"
+                    output.outputFileName = "KeliBoard-MaterialYou_${defaultConfig.versionName}-${variant.buildType}.apk"
                 }
             }
         }

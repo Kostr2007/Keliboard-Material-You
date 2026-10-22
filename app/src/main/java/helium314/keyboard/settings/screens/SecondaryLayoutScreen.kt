@@ -22,6 +22,7 @@ import helium314.keyboard.latin.utils.getActivity
 import helium314.keyboard.latin.utils.getStringResourceOrName
 import helium314.keyboard.latin.utils.prefs
 import helium314.keyboard.settings.SearchSettingsScreen
+import helium314.keyboard.settings.Illustration
 import helium314.keyboard.settings.Setting
 import helium314.keyboard.settings.SettingsActivity
 import helium314.keyboard.latin.utils.Theme
@@ -39,7 +40,9 @@ fun SecondaryLayoutScreen(
     SearchSettingsScreen(
         onClickBack = onClickBack,
         title = stringResource(R.string.settings_screen_secondary_layouts),
-        settings = LayoutType.entries.filter { it != LayoutType.MAIN }.map { Settings.PREF_LAYOUT_PREFIX + it.name }
+        settings = LayoutType.entries.filter { it != LayoutType.MAIN }.map { Settings.PREF_LAYOUT_PREFIX + it.name },
+        illustration = Illustration.LAYOUTS,
+        illustrationText = stringResource(R.string.hero_layouts),
     )
 }
 

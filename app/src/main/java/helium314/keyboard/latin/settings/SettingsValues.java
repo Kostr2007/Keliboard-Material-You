@@ -30,6 +30,7 @@ import helium314.keyboard.latin.R;
 import helium314.keyboard.latin.RichInputMethodManager;
 import helium314.keyboard.latin.common.Colors;
 import helium314.keyboard.latin.permissions.PermissionsUtil;
+import helium314.keyboard.latin.suggestions.RejectedAutocorrections;
 import helium314.keyboard.latin.utils.FoldableUtils;
 import helium314.keyboard.latin.utils.InputTypeUtils;
 import helium314.keyboard.latin.utils.JniUtils;
@@ -152,6 +153,9 @@ public class SettingsValues {
     public final boolean mAutoCorrectionEnabledPerUserSettings;
     public final boolean mAutoCorrectCapitalizedSuggestion;
     public final boolean mBackspaceRevertsAutocorrect;
+    public final boolean mLearnRejectedAutocorrect;
+    public final boolean mFixDoubleCaps;
+    public final boolean mCollapseRepeatedLetters;
     public final boolean mAutoCorrectShortcuts;
     public final boolean mSuggestionsEnabled;
     private final boolean mOverrideShowingSuggestions;
@@ -235,6 +239,10 @@ public class SettingsValues {
         mAutoCorrectCapitalizedSuggestion = prefs.getBoolean(Settings.PREF_AUTOCORRECT_CAPITALIZED_SUGGESTION, Defaults.PREF_AUTOCORRECT_CAPITALIZED_SUGGESTION);
         mAutoCorrectShortcuts = prefs.getBoolean(Settings.PREF_AUTOCORRECT_SHORTCUTS, Defaults.PREF_AUTOCORRECT_SHORTCUTS);
         mBackspaceRevertsAutocorrect = prefs.getBoolean(Settings.PREF_BACKSPACE_REVERTS_AUTOCORRECT, Defaults.PREF_BACKSPACE_REVERTS_AUTOCORRECT);
+        mLearnRejectedAutocorrect = prefs.getBoolean(Settings.PREF_LEARN_REJECTED_AUTOCORRECT, Defaults.PREF_LEARN_REJECTED_AUTOCORRECT);
+        mFixDoubleCaps = prefs.getBoolean(Settings.PREF_FIX_DOUBLE_CAPS, Defaults.PREF_FIX_DOUBLE_CAPS);
+        mCollapseRepeatedLetters = prefs.getBoolean(Settings.PREF_COLLAPSE_REPEATED_LETTERS, Defaults.PREF_COLLAPSE_REPEATED_LETTERS);
+        RejectedAutocorrections.load(prefs);
         mBigramPredictionEnabled = prefs.getBoolean(Settings.PREF_BIGRAM_PREDICTIONS, Defaults.PREF_BIGRAM_PREDICTIONS);
         mSuggestPunctuation = prefs.getBoolean(Settings.PREF_SUGGEST_PUNCTUATION, Defaults.PREF_SUGGEST_PUNCTUATION);
         mSuggestClipboardContent = prefs.getBoolean(Settings.PREF_SUGGEST_CLIPBOARD_CONTENT, Defaults.PREF_SUGGEST_CLIPBOARD_CONTENT);

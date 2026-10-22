@@ -1318,4 +1318,50 @@ New dictionary:
     <string name="gesture_data_swipe_o_scope">Tool for visualizing gesture data: &lt;a href=%s&gt;Swipe-O-Scope&lt;/a&gt;</string>
 
     <!-- new strings should go above the section for gesture data gathering -->
+    <!-- Material You rework -->
+    <string name="settings_screen_keys">Keys &amp; input</string>
+    <string name="settings_screen_sound_vibration">Sound &amp; vibration</string>
+    <string name="settings_group_typing">Typing</string>
+    <string name="settings_group_keyboard">Keyboard</string>
+    <string name="settings_group_style">Look &amp; feel</string>
+    <string name="settings_group_system">System</string>
+    <string name="settings_category_learning">Learning &amp; personalization</string>
+    <string name="settings_category_suggestion_sources">Suggestion sources</string>
+    <string name="settings_category_capitalization">Capitalization</string>
+    <string name="settings_category_size">Size &amp; spacing</string>
+    <string name="settings_category_fonts">Text &amp; fonts</string>
+    <string name="settings_category_emoji">Emoji</string>
+    <string name="settings_category_gestures">Swipe gestures</string>
+    <string name="settings_category_behavior">Behavior</string>
+    <string name="settings_category_popups">Popups &amp; hints</string>
+    <string name="settings_category_sound">Sound</string>
+    <string name="settings_category_vibration">Vibration</string>
+    <string name="settings_category_background">Background</string>
+    <string name="settings_category_backup">Backup &amp; diagnostics</string>
+    <string name="main_hero_title">Make it yours</string>
+    <string name="main_hero_text">Material You colors, smart suggestions and dozens of languages. Fully offline, no internet permission.</string>
+    <string name="try_keyboard_hint">Try the keyboard here</string>
+    <string name="keyboard_status_ready">%s is ready</string>
+    <string name="keyboard_status_not_selected">%s is not your current keyboard</string>
+    <string name="keyboard_status_setup">Set up</string>
+    <string name="hero_languages">Type in several languages at once and switch with a swipe on the space bar.</string>
+    <string name="hero_keys">Popup keys, hints on keys, number row and additional keys.</string>
+    <string name="hero_sound_vibration">Fine-tune key press sounds and haptic feedback.</string>
+    <string name="hero_appearance">Colors, shapes, size and fonts. Follows your wallpaper with Material You.</string>
+    <string name="hero_toolbar">Quick actions above the keyboard: pin the tools you use the most.</string>
+    <string name="hero_gesture">Glide over the letters to type whole words without lifting your finger.</string>
+    <string name="hero_correction">Smart suggestions, autocorrect and spell checking that learn how you type.</string>
+    <string name="hero_layouts">Symbols, numbers and other layouts used together with your languages.</string>
+    <string name="hero_dictionaries">Dictionaries power suggestions and corrections. Add your own words or dictionaries.</string>
+    <string name="hero_advanced">Gestures on keys, behavior after symbols and emoji, backup and experiments.</string>
+    <string name="hero_about">A privacy friendly open source keyboard, licensed under the GNU GPL v3.</string>
+    <string name="hero_clipboard">Keep recently copied text and images at hand.</string>
+    <string name="learn_rejected_autocorrect">Remember undone corrections</string>
+    <string name="learn_rejected_autocorrect_summary">When you undo an autocorrection with backspace, this word is not corrected again</string>
+    <string name="fix_double_caps">Fix TWo INitial CApitals</string>
+    <string name="fix_double_caps_summary">Correct words like “HEllo” to “Hello” when typing fast</string>
+    <string name="collapse_repeated_letters">Understand stretched words</string>
+    <string name="collapse_repeated_letters_summary">Suggest “so” when you type “sooooo”</string>
+    <string name="forget_rejected_autocorrect">Forget undone corrections</string>
+    <string name="forget_rejected_autocorrect_summary">Words remembered: %d. Tap to let them be corrected again</string>
 </resources>
