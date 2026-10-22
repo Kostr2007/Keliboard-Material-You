@@ -1,0 +1,1318 @@
+// SPDX-License-Identifier: GPL-3.0-only
+package helium314.keyboard.latin
+
+import android.os.Handler
+import android.os.Message
+import android.text.InputType
+import android.text.Spanned
+import android.text.style.SuggestionSpan
+import android.view.inputmethod.*
+import androidx.core.content.edit
+import helium314.keyboard.ShadowInputMethodManager2
+import helium314.keyboard.ShadowInputMethodService
+import helium314.keyboard.ShadowInputMethodService.Companion.composingEnd
+import helium314.keyboard.ShadowInputMethodService.Companion.composingStart
+import helium314.keyboard.ShadowInputMethodService.Companion.selectedText
+import helium314.keyboard.ShadowInputMethodService.Companion.selectionEnd
+import helium314.keyboard.ShadowInputMethodService.Companion.selectionStart
+import helium314.keyboard.ShadowLocaleManagerCompat
+import helium314.keyboard.event.Event
+import helium314.keyboard.event.HangulCombiner
+import helium314.keyboard.keyboard.KeyboardSwitcher
+import helium314.keyboard.keyboard.MainKeyboardView
+import helium314.keyboard.keyboard.emoji.RecentEmojis
+import helium314.keyboard.keyboard.internal.keyboard_parser.floris.KeyCode
+import helium314.keyboard.latin.ShadowFacilitator2.Companion.lastAddedWord
+import helium314.keyboard.latin.SuggestedWords.SuggestedWordInfo
+import helium314.keyboard.latin.common.Constants
+import helium314.keyboard.latin.common.LocaleUtils.constructLocale
+import helium314.keyboard.latin.common.StringUtils
+import helium314.keyboard.latin.inputlogic.InputLogic
+import helium314.keyboard.latin.inputlogic.SpaceState
+import helium314.keyboard.latin.settings.Settings
+import helium314.keyboard.latin.utils.ScriptUtils
+import helium314.keyboard.latin.utils.SubtypeSettings
+import helium314.keyboard.latin.utils.getTimestampFormatter
+import helium314.keyboard.latin.utils.prefs
+import org.junit.runner.RunWith
+import org.mockito.Mockito
+import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.Implementation
+import org.robolectric.annotation.Implements
+import org.robolectric.shadows.ShadowLog
+import java.util.*
+import kotlin.math.min
+import kotlin.streams.asSequence
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+@RunWith(RobolectricTestRunner::class)
+@Config(shadows = [
+    ShadowLocaleManagerCompat::class,
+    ShadowInputMethodManager2::class,
+    ShadowInputMethodService::class,
+    ShadowKeyboardSwitcher::class,
+    ShadowHandler::class,
+    ShadowFacilitator2::class,
+])
+class InputLogicTest {
+    private val latinIME = Robolectric.setupService(LatinIME::class.java)
+    private val settingsValues get() = Settings.getValues()
+    private val inputLogic get() = latinIME.mInputLogic
+    private val connection: RichInputConnection get() = inputLogic.mConnection
+    private val composerReader = InputLogic::class.java.getDeclaredField("mWordComposer").apply { isAccessible = true }
+    private val composer get() = composerReader.get(inputLogic) as WordComposer
+    private val spaceStateReader = InputLogic::class.java.getDeclaredField("mSpaceState").apply { isAccessible = true }
+    private val spaceState get() = spaceStateReader.get(inputLogic) as Int
+    private val beforeComposingReader = RichInputConnection::class.java.getDeclaredField("mCommittedTextBeforeComposingText").apply { isAccessible = true }
+    private val connectionTextBeforeComposingText get() = (beforeComposingReader.get(connection) as CharSequence).toString()
+    private val composingReader = RichInputConnection::class.java.getDeclaredField("mComposingText").apply { isAccessible = true }
+    private val connectionComposingText get() = (composingReader.get(connection) as CharSequence).toString()
+
+    private val textBeforeCursor get() = ShadowInputMethodService.textBeforeCursor
+    private val textAfterCursor get() = ShadowInputMethodService.textAfterCursor
+    private val composingText get() = ShadowInputMethodService.composingText
+    private val text get() = ShadowInputMethodService.text
+    private val cursor get() = ShadowInputMethodService.cursor
+    private var currentInputType get() = ShadowInputMethodService.currentInputType
+        set(value) { ShadowInputMethodService.currentInputType = value }
+
+    init {
+        ShadowLog.setupLogging()
+        ShadowLog.stream = System.out
+    }
+
+    @Test fun inputCode() {
+        input('c')
+        assertEquals("c", textBeforeCursor)
+        assertEquals("c", getTextFromConnection())
+        assertEquals("", textAfterCursor)
+        assertEquals("c", composingText)
+        latinIME.mHandler.onFinishInput()
+        assertEquals("", composingText)
+    }
+
+    @Test fun `shortcut starting with digits replaces the whole shortcut`() {
+        chainInput("12")
+        assertEquals("", composer.typedWord)
+
+        input('e')
+        assertEquals("12e", composer.typedWord)
+
+        pickSuggestion("example")
+        assertEquals("example", text)
+    }
+
+    @Test fun `recorrection replaces a leading digit with the chosen suggestion`() {
+        setText("3ast")
+        assertEquals("3ast", composer.typedWord)
+        pickSuggestion("east")
+        assertEquals("east", text)
+    }
+
+    @Test fun delete() {
+        setText("hello there ")
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("hello there", text)
+        assertEquals("there", composingText)
+    }
+
+    @Test fun rapidBackspaceDoesNotReuseDroppedComposingRegion() {
+        setText("hello ")
+        fun pressDelete() = latinIME.onEvent(Event.createSoftwareKeypressEvent(
+            Event.NOT_A_CODE_POINT, KeyCode.DELETE, 0,
+            Constants.NOT_A_COORDINATE, Constants.NOT_A_COORDINATE, false))
+
+        pressDelete()
+        // Some web editors drop a newly resumed composing region before reporting the update.
+        composingStart = -1
+        composingEnd = -1
+        pressDelete()
+
+        assertEquals("hell", text)
+        input(' ')
+        assertEquals("hell ", text)
+    }
+
+    @Test fun deleteMultiCodepointText() {
+        setText("hello there \uD83E\uDF00")
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("hello there ", text)
+    }
+
+    @Test fun deleteCombinedText() {
+        setText("hello there э́")
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("hello there ", text)
+
+        setText("hello there H̵̛͕̞̦̰̜͍̰̥̟͆̏͂̌͑́ͅ")
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("hello there ", text)
+    }
+
+    @Test fun deleteInsideWord() {
+        setText("hello you there")
+        setCursorPosition(8) // after o in you
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("hello yu there", text)
+        assertEquals("yu", composingText)
+    }
+
+    @Test fun insertLetterIntoWord() {
+        setText("hello")
+        setCursorPosition(3) // after first l
+        input('i')
+        assertEquals("helilo", getWordAtCursor())
+        assertEquals("helilo", getTextFromConnection())
+        assertEquals(4, getCursorPosition())
+        assertEquals(4, cursor)
+        assertEquals("", composingText)
+    }
+
+    @Test fun insertLetterIntoWordWithWeirdEditor() {
+        currentInputType = 180225 // should not change much, but just to be sure
+        setText("hello")
+        setCursorPosition(3, weirdTextField = true) // after first l
+        input('i')
+        assertEquals("helilo", getWordAtCursor())
+        assertEquals("helilo", getTextFromConnection())
+        assertEquals(4, getCursorPosition())
+        assertEquals(4, cursor)
+    }
+
+    @Test fun insertLetterIntoOneOfSeveralWords() {
+        setText("hello my friend")
+        setCursorPosition(7) // between m and y
+        input('a')
+        assertEquals("may", getWordAtCursor())
+        assertEquals("hello may friend", getTextFromConnection())
+        assertEquals(8, getCursorPosition())
+        assertEquals(8, cursor)
+    }
+
+    @Test fun combineHangul() {
+        val ko = SubtypeSettings.getResourceSubtypesForLocale("ko".constructLocale()).first()
+        latinIME.switchToSubtype(ko)
+        chainInput("ㅂㄱㅑ")
+        assertEquals("ㅂ갸", text)
+    }
+
+    @Test fun emojiHangul() {
+        val ko = SubtypeSettings.getResourceSubtypesForLocale("ko".constructLocale()).first()
+        latinIME.switchToSubtype(ko)
+        input(0x1F970)
+        assertEquals("\uD83E\uDD70", text)
+    }
+
+    // https://github.com/HeliBorg/HeliBoard/issues/214
+    @Test fun insertLetterIntoWordHangul() {
+        latinIME.switchToSubtype(SubtypeSettings.getResourceSubtypesForLocale("ko".constructLocale()).first())
+        chainInput("ㅛㅎㄹㅎㅕㅛ")
+        setCursorPosition(3)
+        input('ㄲ')
+        assertEquals("ㅛㅎㄹㄲ혀ㅛ", getTextFromConnection())
+        assertEquals("ㅛㅎㄹㄲ혀ㅛ", textBeforeCursor + textAfterCursor)
+        assertEquals(4, getCursorPosition())
+        assertEquals(4, cursor)
+    }
+
+    @Test fun insertHangulAtStartOfComposingWord() {
+        latinIME.switchToSubtype(SubtypeSettings.getResourceSubtypesForLocale("ko".constructLocale()).first())
+        chainInput("ㄴㅏㄴㅏ")
+        assertEquals("나나", text)
+        setCursorPosition(0)
+        input('ㅇ')
+        assertEquals("ㅇ나나", text)
+        assertEquals(1, cursor)
+    }
+
+    @Test fun insertHangulAfterStaleSelectionUpdate() {
+        latinIME.switchToSubtype(SubtypeSettings.getResourceSubtypesForLocale("ko".constructLocale()).first())
+        chainInput("ㄴㅏㄴㅏ")
+        assertEquals("나나", text)
+
+        selectionStart = 1
+        selectionEnd = 1
+        latinIME.onUpdateSelection(0, 0, 1, 1, composingStart, composingEnd)
+        handleMessages()
+
+        input('ㅇ')
+        assertEquals("나ㅇ나", text)
+        assertEquals(2, cursor)
+    }
+
+    // https://github.com/HeliBorg/HeliBoard/issues/2245
+    @Test fun insertKhiproAtCursor() {
+        inputLogic.startInput("bn_khipro", settingsValues)
+        chainInput("ar")
+        assertEquals("আর", text)
+
+        setCursorPosition(1)
+        chainInput("ma")
+        assertEquals("আমার", text)
+        assertEquals(3, cursor)
+    }
+
+    // see issue 1447
+    @Test fun separatorAfterHangul() {
+        latinIME.switchToSubtype(SubtypeSettings.getResourceSubtypesForLocale("ko".constructLocale()).first())
+        chainInput("ㅛ.")
+        assertEquals("ㅛ.", text)
+    }
+
+    // https://github.com/HeliBorg/HeliBoard/issues/2774
+    @Test fun firstSpaceAfterThaiCompositionIsInserted() {
+        latinIME.switchToSubtype(SubtypeSettings.getResourceSubtypesForLocale("th".constructLocale()).first())
+        chainInput("สวัสดี")
+
+        input(' ')
+
+        assertEquals("สวัสดี ", text)
+    }
+
+    // https://github.com/HeliBorg/HeliBoard/issues/2004
+    @Test fun combineHangulAfterInputStarts() {
+        inputLogic.startInput("hangul", settingsValues)
+        assertEquals("hangul", composer.combiningSpec)
+        chainInput("ㄴㅏ")
+        assertEquals("나", text)
+    }
+
+    // https://github.com/HeliBorg/HeliBoard/issues/214
+    @Test fun punctuationAfterHangulWord() {
+        latinIME.switchToSubtype(SubtypeSettings.getResourceSubtypesForLocale("ko".constructLocale()).first())
+        chainInput("ㅇㅏㄴㄴㅕㅇ.")
+        assertEquals("안녕.", text)
+    }
+
+    @Test fun commaAfterHangulWord() {
+        latinIME.switchToSubtype(SubtypeSettings.getResourceSubtypesForLocale("ko".constructLocale()).first())
+        chainInput("ㅇㅏㄴㄴㅕㅇ,")
+        assertEquals("안녕,", text)
+    }
+
+    @Test fun cheonjiinBackspaceInsideComposition() {
+        inputLogic.startInput("hangul", settingsValues)
+        intArrayOf(
+            HangulCombiner.CHEONJIIN_CONSONANT_GIYEOK,
+            HangulCombiner.CHEONJIIN_VOWEL_I,
+            HangulCombiner.CHEONJIIN_VOWEL_DOT,
+            HangulCombiner.CHEONJIIN_CONSONANT_NIEUN,
+            HangulCombiner.CHEONJIIN_VOWEL_I,
+            HangulCombiner.CHEONJIIN_VOWEL_DOT,
+        ).forEach(::input)
+        assertEquals("가나", text)
+        latinIME.mKeyboardActionListener.onHorizontalSpaceSwipe(-1)
+        assertEquals(1, cursor)
+        assertEquals(false, composer.isComposingWord)
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("나", text)
+        assertEquals(0, cursor)
+    }
+
+    @Test fun cheonjiinWordSpaceAndCursorBackspace() {
+        inputLogic.startInput("hangul", settingsValues)
+        intArrayOf(
+            HangulCombiner.CHEONJIIN_CONSONANT_IEUNG,
+            HangulCombiner.CHEONJIIN_VOWEL_I,
+            HangulCombiner.CHEONJIIN_VOWEL_DOT,
+            HangulCombiner.CHEONJIIN_CONSONANT_NIEUN,
+            Constants.CODE_SPACE,
+            Constants.CODE_SPACE,
+            HangulCombiner.CHEONJIIN_CONSONANT_GIYEOK,
+            HangulCombiner.CHEONJIIN_VOWEL_I,
+            HangulCombiner.CHEONJIIN_VOWEL_DOT,
+        ).forEach(::input)
+
+        assertEquals("안 가", text)
+        setCursorPosition(2)
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("안가", text)
+
+        setText("")
+        inputLogic.startInput("hangul", settingsValues)
+        intArrayOf(
+            HangulCombiner.CHEONJIIN_CONSONANT_IEUNG,
+            HangulCombiner.CHEONJIIN_VOWEL_I,
+            HangulCombiner.CHEONJIIN_VOWEL_DOT,
+            HangulCombiner.CHEONJIIN_CONSONANT_NIEUN,
+            Constants.CODE_SPACE,
+            HangulCombiner.CHEONJIIN_CONSONANT_NIEUN,
+            HangulCombiner.CHEONJIIN_VOWEL_I,
+            HangulCombiner.CHEONJIIN_VOWEL_DOT,
+        ).forEach(::input)
+        assertEquals("안나", text)
+
+        setText("")
+        inputLogic.startInput("hangul", settingsValues)
+        intArrayOf(
+            HangulCombiner.CHEONJIIN_CONSONANT_GIYEOK,
+            HangulCombiner.CHEONJIIN_VOWEL_EU,
+            HangulCombiner.CHEONJIIN_CONSONANT_NIEUN,
+            HangulCombiner.CHEONJIIN_CONSONANT_NIEUN,
+            HangulCombiner.CHEONJIIN_VOWEL_I,
+            HangulCombiner.CHEONJIIN_VOWEL_DOT,
+            HangulCombiner.CHEONJIIN_VOWEL_I,
+            HangulCombiner.CHEONJIIN_CONSONANT_SIOT,
+            HangulCombiner.CHEONJIIN_VOWEL_DOT,
+            HangulCombiner.CHEONJIIN_VOWEL_I,
+            Constants.CODE_SPACE,
+            Constants.CODE_SPACE,
+            HangulCombiner.CHEONJIIN_CONSONANT_IEUNG,
+            HangulCombiner.CHEONJIIN_VOWEL_I,
+            HangulCombiner.CHEONJIIN_CONSONANT_GIYEOK,
+            HangulCombiner.CHEONJIIN_VOWEL_DOT,
+            HangulCombiner.CHEONJIIN_VOWEL_EU,
+            HangulCombiner.CHEONJIIN_CONSONANT_SIOT,
+        ).forEach(::input)
+        assertEquals("그래서 이곳", text)
+        latinIME.mKeyboardActionListener.onHorizontalSpaceSwipe(-2)
+        assertEquals(4, cursor)
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("그래서이곳", text)
+    }
+
+    @Test fun cheonjiinCommitSurvivesCursorRoundTrip() {
+        inputLogic.startInput("hangul", settingsValues)
+        intArrayOf(
+            HangulCombiner.CHEONJIIN_CONSONANT_IEUNG,
+            HangulCombiner.CHEONJIIN_VOWEL_I,
+            HangulCombiner.CHEONJIIN_VOWEL_DOT,
+            HangulCombiner.CHEONJIIN_CONSONANT_NIEUN,
+        ).forEach(::input)
+        input(' ')
+        assertEquals("안", text)
+        assertEquals(false, composer.isComposingWord)
+        input(' ')
+        assertEquals("안 ", text)
+        setCursorPosition(0)
+        setCursorPosition(1)
+        assertEquals(false, composer.isComposingWord)
+        input(HangulCombiner.CHEONJIIN_VOWEL_I)
+        assertEquals("안ㅣ ", text)
+        setCursorPosition(1)
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("ㅣ ", text)
+        assertEquals(0, cursor)
+    }
+
+    @Test fun deleteHangulInDebugMode() { // issue 1551, later only happened on phone
+        latinIME.switchToSubtype(SubtypeSettings.getResourceSubtypesForLocale("ko".constructLocale()).first())
+        setText("ㅛㅛ ")
+        functionalKeyPress(KeyCode.DELETE)
+        functionalKeyPress(KeyCode.DELETE)
+        functionalKeyPress(KeyCode.DELETE)
+    }
+
+    @Test fun separatorUnselectsWord() {
+        setText("hello")
+        assertEquals("hello", composingText)
+        input('.')
+        assertEquals("", composingText)
+    }
+
+    @Test fun autospace() {
+        setText("hello")
+        input('.')
+        input('a')
+        assertEquals("hello.a", textBeforeCursor)
+        latinIME.prefs().edit { putBoolean(Settings.PREF_AUTOSPACE_AFTER_PUNCTUATION, true) }
+        setText("hello")
+        input('.')
+        input('a')
+        assertEquals("hello. a", textBeforeCursor)
+    }
+
+    @Test fun autospaceWithSuggestionsDisabled() {
+        latinIME.prefs().edit {
+            putBoolean(Settings.PREF_AUTOSPACE_AFTER_PUNCTUATION, true)
+            putBoolean(Settings.PREF_SHOW_SUGGESTIONS, false)
+        }
+        setText("hello")
+        input('.')
+        input('a')
+        assertEquals("hello. a", textBeforeCursor)
+
+        setText("3")
+        input('.')
+        input('1')
+        assertEquals("3.1", textBeforeCursor)
+    }
+
+    @Test fun autospaceButWithTextAfter() {
+        setText("hello there")
+        setCursorPosition(5) // after hello
+        input('.')
+        input('a')
+        assertEquals("hello.a", textBeforeCursor)
+        assertEquals("hello.a there", text)
+        latinIME.prefs().edit { putBoolean(Settings.PREF_AUTOSPACE_AFTER_PUNCTUATION, true) }
+        setText("hello there")
+        setCursorPosition(5) // after hello
+        input('.')
+        input('a')
+        assertEquals("hello. a", textBeforeCursor)
+        assertEquals("hello. a there", text)
+    }
+
+    @Test fun noAutospaceInUrlField() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_AUTOSPACE_AFTER_PUNCTUATION, true) }
+        chainInput("example.net")
+        assertEquals("example. net", text)
+        lastAddedWord = ""
+        setText("")
+        setInputType(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        chainInput("example.net")
+        assertEquals("", lastAddedWord)
+        assertEquals("example.net", text)
+        assertEquals("example.net", composingText)
+    }
+
+    @Test fun noAutospaceInUrlFieldWhenPickingSuggestion() {
+        setInputType(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        chainInput("exam")
+        pickSuggestion("example")
+        assertEquals("example", text)
+        input('.')
+        assertEquals("example.", text)
+    }
+
+    @Test fun noAutospaceForDetectedUrl() { // "light" version, should work without url detection
+        latinIME.prefs().edit { putBoolean(Settings.PREF_AUTOSPACE_AFTER_PUNCTUATION, true) }
+        chainInput("http://example.net")
+        assertEquals("http://example.net", text)
+        assertEquals("http", lastAddedWord)
+        assertEquals("example.net", composingText)
+    }
+
+    @Test fun noAutospaceForDetectedEmail() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_AUTOSPACE_AFTER_PUNCTUATION, true) }
+        chainInput("mail@example.com")
+        assertEquals("mail@example.com", text)
+        assertEquals("mail@example", lastAddedWord) // todo: do we want this? not really nice, but don't want to be too aggressive with URL detection disabled
+        assertEquals("com", composingText) // todo: maybe this should still see the whole address as a single word? or don't be too aggressive?
+        setText("")
+        lastAddedWord = ""
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        chainInput("mail@example.com")
+        assertEquals("", lastAddedWord)
+        assertEquals("mail@example.com", composingText)
+    }
+
+    @Test fun urlDetectionThings() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        chainInput("...h")
+        assertEquals("...h", text)
+        assertEquals("h", composingText)
+        reset()
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        chainInput("bla..")
+        assertEquals("bla..", text)
+        assertEquals("", composingText)
+        reset()
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        chainInput("bla.c")
+        assertEquals("bla.c", text)
+        assertEquals("bla.c", composingText)
+        reset()
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        latinIME.prefs().edit { putBoolean(Settings.PREF_AUTOSPACE_AFTER_PUNCTUATION, true) }
+        latinIME.prefs().edit { putBoolean(Settings.PREF_SHIFT_REMOVES_AUTOSPACE, true) }
+        input("bla")
+        input('.')
+        functionalKeyPress(KeyCode.SHIFT) // should remove the phantom space (in addition to normal effect)
+        input('c')
+        assertEquals("bla.c", text)
+        assertEquals("bla.c", composingText)
+    }
+
+    @Test fun stripSeparatorsBeforeAddingToHistoryWithURLDetection() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        chainInput("example.com.")
+        assertEquals("example.com.", composingText)
+        input(' ')
+        assertEquals("example.com", lastAddedWord)
+    }
+
+    @Test fun dontSelectConsecutiveSeparatorsWithURLDetection() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        chainInput("bla..")
+        assertEquals("", composingText)
+        assertEquals("bla..", text)
+    }
+
+    @Test fun selectDoesSelect() {
+        setText("this is some text")
+        setCursorPosition(3, 8)
+        assertEquals("s is ", text.substring(3, 8))
+    }
+
+    @Test fun shiftRecapitalizesSelectionPresentWhenInputStarts() {
+        ShadowInputMethodService.text = "hello"
+        selectionStart = 0
+        selectionEnd = 5
+        composingStart = -1
+        composingEnd = -1
+        val editorInfo = EditorInfo().apply {
+            inputType = currentInputType
+            initialSelStart = selectionStart
+            initialSelEnd = selectionEnd
+        }
+        latinIME.mHandler.onStartInput(editorInfo, false)
+        latinIME.mHandler.onStartInputView(editorInfo, false)
+        handleMessages()
+
+        functionalKeyPress(KeyCode.SHIFT)
+
+        assertEquals("Hello", text)
+        assertEquals(0, selectionStart)
+        assertEquals(5, selectionEnd)
+    }
+
+    @Test fun shiftIgnoresStaleInitialSelection() {
+        ShadowInputMethodService.text = "hello"
+        selectionStart = 0
+        selectionEnd = 0
+        composingStart = -1
+        composingEnd = -1
+        val editorInfo = EditorInfo().apply {
+            inputType = currentInputType
+            initialSelStart = 0
+            initialSelEnd = 5
+        }
+        latinIME.mHandler.onStartInput(editorInfo, false)
+        latinIME.mHandler.onStartInputView(editorInfo, false)
+        handleMessages()
+
+        latinIME.onEvent(Event.createSoftwareKeypressEvent(
+            Event.NOT_A_CODE_POINT, KeyCode.SHIFT, 0,
+            Constants.NOT_A_COORDINATE, Constants.NOT_A_COORDINATE, false))
+        handleMessages()
+
+        assertEquals("hello", text)
+        assertEquals(0, selectionStart)
+        assertEquals(0, selectionEnd)
+    }
+
+    @Test fun noComposingForPasswordFields() {
+        setInputType(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD)
+        input('a')
+        input('b')
+        assertEquals("", composingText)
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        input('.')
+        input('c')
+        assertEquals("", composingText)
+    }
+
+    @Test fun classlessTextInputUsesTextDefaults() {
+        val classless = InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+                InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE
+
+        setInputType(classless)
+
+        assertEquals(classless or InputType.TYPE_CLASS_TEXT,
+            settingsValues.mInputAttributes.mInputType)
+        assertEquals(true, settingsValues.mInputAttributes.mShouldShowSuggestions)
+    }
+
+    @Test fun `don't select whole thing as composing word if URL detection disabled`() {
+        setText("http://example.com")
+        setCursorPosition(13) // between l and e
+        assertEquals("example", composingText)
+    }
+
+    @Test fun `select whole thing except http(s) as composing word if URL detection enabled and selecting`() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        setText("http://example.com")
+        setCursorPosition(13) // between l and e
+        assertEquals("example.com", composingText)
+        setText("http://bla.com http://example.com ")
+        setCursorPosition(29) // between l and e
+        assertEquals("example.com", composingText)
+    }
+
+    @Test fun `select whole thing except http(s) as composing word if URL detection enabled and typing`() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        chainInput("http://example.com")
+        assertEquals("example.com", composingText)
+    }
+
+    @Test fun `don't add partial URL to history`() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        setText("http:/") // just so lastAddedWord isn't set to http
+        chainInput("/bla.com")
+        assertEquals("", lastAddedWord)
+    }
+
+    @Test fun urlProperlySelected() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        setInputType(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        setText("http://example.com/here")
+        setCursorPosition(18) // after .com
+        functionalKeyPress(KeyCode.DELETE)
+        functionalKeyPress(KeyCode.DELETE)
+        functionalKeyPress(KeyCode.DELETE) // delete com
+        // todo: do we really want no composing text?
+        //  probably not... try not to break composing
+        assertEquals("", composingText)
+        chainInput("net")
+        assertEquals("example.net", composingText)
+    }
+
+    @Test fun urlProperlySelectedWhenNotDeletingFullTld() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        setText("http://example.com/here")
+        setCursorPosition(18) // after .com
+        functionalKeyPress(KeyCode.DELETE)
+        functionalKeyPress(KeyCode.DELETE) // delete om
+        // todo: this is a weird difference to deleting the full TLD (see urlProperlySelected)
+        //  what do we want here? (probably consistency)
+        assertEquals("example.c/here", composingText)
+        chainInput("z")
+        assertEquals("", composingText) // todo: this is a weird difference to deleting the full TLD
+//        assertEquals("example.cz", composingText) // fails, but probably would be better than above
+    }
+
+    @Test fun dontCommitPartialUrlBeforeFirstPeriod() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        // type http://bla. -> bla not selected, but clearly url, also means http://bla is committed which we probably don't want
+        chainInput("http://bla.")
+        assertEquals("bla.", composingText)
+    }
+
+    @Test fun `intermediate commits in text field without protocol`() {
+        chainInput("bla.")
+        assertEquals("bla", lastAddedWord)
+        chainInput("com/")
+        assertEquals("com", lastAddedWord)
+        chainInput("img.jpg")
+        assertEquals("img", lastAddedWord)
+        assertEquals("jpg", composingText)
+    }
+
+    @Test fun `intermediate commit in text field without protocol and with URL detection`() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        chainInput("bla.com/img.jpg")
+        assertEquals("bla", lastAddedWord)
+        assertEquals("bla.com/img.jpg", composingText)
+    }
+
+    @Test fun `only protocol commit in text field with protocol and URL detection`() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        chainInput("http://bla.com/img.jpg")
+        assertEquals("http", lastAddedWord)
+        assertEquals("bla.com/img.jpg", composingText)
+    }
+
+    @Test fun `no intermediate commit in URL field with protocol`() {
+        setInputType(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        chainInput("http://bla.com/img.jpg")
+        assertEquals("http", lastAddedWord) // todo: somehow avoid?
+        assertEquals("http://bla.com/img.jpg", text)
+        assertEquals("bla.com/img.jpg", composingText)
+    }
+
+    @Test fun `no intermediate commit in URL field with protocol and URL detection`() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        setInputType(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        chainInput("http://bla.com/img.jpg")
+        assertEquals("http", lastAddedWord) // todo: somehow avoid?
+        assertEquals("http://bla.com/img.jpg", text)
+        assertEquals("bla.com/img.jpg", composingText)
+    }
+
+    @Test fun `no intermediate commit in URL field without protocol`() {
+        setInputType(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        chainInput("bla.com/img.jpg")
+        assertEquals("", lastAddedWord)
+        assertEquals("bla.com/img.jpg", text)
+        assertEquals("bla.com/img.jpg", composingText)
+    }
+
+    @Test fun `no intermediate commit in URL field without protocol and with URL detection`() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        setInputType(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        chainInput("bla.com/img.jpg")
+        assertEquals("", lastAddedWord)
+        assertEquals("bla.com/img.jpg", text)
+        assertEquals("bla.com/img.jpg", composingText)
+    }
+
+    @Test fun `don't accidentally detect some other text fields as URI`() {
+        // see comment in InputLogic.textBeforeCursorMayBeUrlOrSimilar
+        latinIME.prefs().edit { putBoolean(Settings.PREF_AUTOSPACE_AFTER_PUNCTUATION, true) }
+        setInputType(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE)
+        chainInput("Hey,why")
+        assertEquals("Hey, why", text)
+    }
+
+    @Test fun `URL detection does not trigger on non-words`() {
+        // first make sure it works without URL detection
+        chainInput("15:50-17")
+        assertEquals("15:50-17", text)
+        assertEquals("", composingText)
+        // then with URL detection
+        reset()
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        chainInput("15:50-17")
+        assertEquals("15:50-17", text)
+        assertEquals("", composingText)
+    }
+
+    @Test fun `autospace after selecting a suggestion`() {
+        pickSuggestion("this")
+        input('b')
+        assertEquals("this b", text)
+        assertEquals("b", composingText)
+    }
+
+    @Test fun `backspace consumes autospace after selecting a suggestion`() {
+        pickSuggestion("this")
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("this", text)
+        input('b')
+        assertEquals("thisb", text)
+    }
+
+    @Test fun `autospace works in URL field when input isn't URL`() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        setInputType(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        pickSuggestion("this")
+        input('b')
+        assertEquals("this b", text)
+        assertEquals("b", composingText)
+    }
+
+    // https://github.com/HeliBorg/HeliBoard/issues/215
+    // https://github.com/HeliBorg/HeliBoard/issues/229
+    @Test fun `autospace works in URL field when input isn't URL, also for multiple suggestions`() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        setInputType(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        pickSuggestion("this")
+        pickSuggestion("is")
+        assertEquals("this is", text)
+        pickSuggestion("not")
+        assertEquals("this is not", text)
+        input('c')
+        assertEquals("this is not c", text)
+        assertEquals("c", composingText)
+    }
+
+    @Test fun `emoji is added to dictionary`() {
+        // check both text and codepoint input
+        chainInput("hello ")
+        input(0x1F36D)
+        assertEquals(StringUtils.newSingleCodePointString(0x1F36D), lastAddedWord)
+        reset()
+        chainInput("hello ")
+        input("🤗")
+        assertEquals("\uD83E\uDD17", lastAddedWord)
+
+        reset()
+        chainInput("hello ")
+        input("why 🤗 ") // not added because it's not only emoji (input can come from pasting)
+        assertEquals("hello", lastAddedWord)
+    }
+
+    @Test fun emojiSuggestionIsAddedToRecents() {
+        RecentEmojis.set(listOf("🐕"))
+
+        pickSuggestion("🐈")
+
+        assertEquals(listOf("🐈", "🐕"), RecentEmojis.get().take(2))
+    }
+
+    @Test fun `emoji uses phantom space`() {
+        // check both text and codepoint input
+        pickSuggestion("hi")
+        input("🤗")
+        assertEquals("\uD83E\uDD17", lastAddedWord)
+        assertEquals("hi \uD83E\uDD17", text)
+        reset()
+        pickSuggestion("hi")
+        input(0x1F36D)
+        assertEquals(StringUtils.newSingleCodePointString(0x1F36D), lastAddedWord)
+        assertEquals("hi ${StringUtils.newSingleCodePointString(0x1F36D)}", text)
+    }
+
+    // https://github.com/HeliBorg/HeliBoard/issues/230
+    @Test fun `no autospace after opening quotes`() {
+        chainInput("\"Hi\" \"h")
+        assertEquals("\"Hi\" \"h", text)
+        assertEquals("h", composingText)
+        reset()
+        chainInput("\"Hi\", \"h")
+        assertEquals("\"Hi\", \"h", text)
+        assertEquals("h", composingText)
+    }
+
+    @Test fun `autospace works in URL field when starting with quotes`() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_URL_DETECTION, true) }
+        setInputType(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        input("\"")
+        pickSuggestion("this")
+        input("i")
+        assertEquals("\"this i", text)
+    }
+
+    @Test fun `double space results in period and space, and delete removes the period`() {
+        chainInput("hello")
+        input(' ')
+        input(' ')
+        assertEquals("hello. ", text)
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("hello ", text)
+    }
+
+    @Test fun `no weird space inside multi-"`() {
+        chainInput("\"\"\"")
+        assertEquals("\"\"\"", text)
+
+        reset()
+        latinIME.prefs().edit { putBoolean(Settings.PREF_AUTOSPACE_AFTER_PUNCTUATION, true) }
+        chainInput("\"\"\"")
+        assertEquals("\"\"\"", text)
+    }
+
+    @Test fun `autospace still happens after "`() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_AUTOSPACE_AFTER_PUNCTUATION, true) }
+        chainInput("\"hello\"you")
+        assertEquals("\"hello\" you", text)
+    }
+
+    @Test fun `autospace still happens after " if next word is in quotes`() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_AUTOSPACE_AFTER_PUNCTUATION, true) }
+        chainInput("\"hello\"\"you\"")
+        assertEquals("\"hello\" \"you\"", text)
+    }
+
+    @Test fun `autospace propagates over "`() {
+        input('"')
+        pickSuggestion("hello")
+        assertEquals(spaceState, SpaceState.PHANTOM) // picking a suggestion sets phantom space state
+        chainInput("\"you")
+        assertEquals("\"hello\" you", text)
+    }
+
+    @Test fun `autospace still happens after " if nex word is in " and after comma`() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_AUTOSPACE_AFTER_PUNCTUATION, true) }
+        chainInput("\"hello\",\"you\"")
+        assertEquals("\"hello\", \"you\"", text)
+    }
+
+    @Test fun `autospace in json editor`() {
+        latinIME.prefs().edit { putBoolean(Settings.PREF_AUTOSPACE_AFTER_PUNCTUATION, true) }
+        chainInput("{\"label\":\"")
+        assertEquals("{\"label\": \"", text)
+        input('c')
+        assertEquals("{\"label\": \"c", text)
+    }
+
+    @Test fun `text input and delete`() {
+        input("hello")
+        assertEquals("hello", text)
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("hell", text)
+
+        reset()
+        input("hello ")
+        assertEquals("hello ", text)
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("hello", text)
+    }
+
+    @Test fun `emoji text input and delete`() {
+        input("🕵🏼")
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("", text)
+
+        reset()
+        input("\uD83D\uDD75\uD83C\uDFFC")
+        input(' ')
+        assertEquals("🕵🏼 ", text)
+        functionalKeyPress(KeyCode.DELETE)
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("", text)
+    }
+
+    // emoRegex update to unicode 16.0 was required, https://github.com/HeliBorg/HeliBoard/issues/1760
+    @Test fun `emojis deleted one by one`() {
+        chainInput("\uD83E\uDEC6\uD83E\uDEC6\uD83E\uDEC6")
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("\uD83E\uDEC6\uD83E\uDEC6", text)
+    }
+
+    // https://github.com/HeliBorg/HeliBoard/issues/1793
+    @Test fun `skin tone emojis are deleted one by one`() {
+        input("🕵🏼🕵🏼🕵🏼")
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("🕵🏼🕵🏼", text)
+    }
+
+    @Test fun `revert autocorrect on delete`() {
+        setInputType(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_AUTO_CORRECT)
+        chainInput("hullo")
+        getAutocorrectedWithSpaceAfter("hello", "hullo")
+        assertEquals("hello ", text)
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("hullo", text)
+
+        reset()
+        setInputType(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_AUTO_CORRECT)
+        latinIME.prefs().edit { putBoolean(Settings.PREF_BACKSPACE_REVERTS_AUTOCORRECT, false) }
+        chainInput("hullo")
+        getAutocorrectedWithSpaceAfter("hello", "hullo")
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("hello", text)
+    }
+
+    @Test fun `remove glide typing word on delete`() {
+        glideTypingInput("hello")
+        assertEquals("hello", text)
+        functionalKeyPress(KeyCode.DELETE)
+        assertEquals("", text)
+
+        // todo: now we want some way to disable delete-all on backspace, either per setting or something else
+        //  need to avoid getting into the mWordComposer.isBatchMode() part of handleBackspaceEvent
+    }
+
+    @Test fun timestamp() {
+        chainInput("hello")
+        functionalKeyPress(KeyCode.TIMESTAMP)
+        assertEquals(Calendar.getInstance().time.time.toDouble(),
+            getTimestampFormatter(latinIME).parse(text.substring(5))!!.time.toDouble(), 1000.0)
+    }
+
+    @Test fun inlineEmojiSearchStart() {
+        assertEquals(true, InputLogic.isStartOfInlineEmojiSearch('t'.code, ':'.code, ' '.code, settingsValues))
+        assertEquals(false, InputLogic.isStartOfInlineEmojiSearch(' '.code, ':'.code, ' '.code, settingsValues))
+        assertEquals(true, InputLogic.isStartOfInlineEmojiSearch('t'.code, ':'.code, '.'.code, settingsValues))
+        assertEquals(true, InputLogic.isStartOfInlineEmojiSearch('t'.code, ':'.code, "🌍".codePoints().asSequence().last(), settingsValues))
+        assertEquals(false, InputLogic.isStartOfInlineEmojiSearch('t'.code, ':'.code, 't'.code, settingsValues))
+        assertEquals(false, InputLogic.isStartOfInlineEmojiSearch('t'.code, ':'.code, '3'.code, settingsValues))
+    }
+
+    @Test fun gestureTypingKeepsManualShift() {
+        setText("hello")
+        val keyboardSwitcher = Mockito.mock(KeyboardSwitcher::class.java)
+        Mockito.`when`(keyboardSwitcher.keyboardCapsMode).thenReturn(CapsMode.MANUAL)
+
+        inputLogic.onStartBatchInput(settingsValues, keyboardSwitcher, latinIME.mHandler)
+
+        Mockito.verify(keyboardSwitcher, Mockito.never())
+            .requestUpdatingShiftState(Mockito.anyInt(), Mockito.any())
+    }
+
+    @Test fun inlineEmojiSearchString() {
+        assertEquals("test", InputLogic.getInlineEmojiSearchString(":test"))
+        assertEquals(null, InputLogic.getInlineEmojiSearchString("test"))
+        assertEquals("test", InputLogic.getInlineEmojiSearchString(" :test"))
+        assertEquals(null, InputLogic.getInlineEmojiSearchString("t:test"))
+        assertEquals(null, InputLogic.getInlineEmojiSearchString("6:test"))
+        assertEquals("test", InputLogic.getInlineEmojiSearchString("🌍:test"))
+        assertEquals("test", InputLogic.getInlineEmojiSearchString(",:test"))
+        assertEquals(null, InputLogic.getInlineEmojiSearchString(":test\nt"))
+        assertEquals("/48", InputLogic.getInlineEmojiSearchString("2606:127.0.0.1::/48")) // do we want this?
+    }
+
+    @Test fun moveCursorHorizontally() {
+        chainInput("hello")
+        assertEquals(5, cursor)
+        latinIME.mKeyboardActionListener.onHorizontalSpaceSwipe(-2)
+        assertEquals(3, cursor)
+        latinIME.mKeyboardActionListener.onHorizontalSpaceSwipe(-5)
+        assertEquals(0, cursor)
+        latinIME.mKeyboardActionListener.onHorizontalSpaceSwipe(-1)
+        assertEquals(0, cursor)
+        latinIME.mKeyboardActionListener.onHorizontalSpaceSwipe(3)
+        assertEquals(3, cursor)
+        latinIME.mKeyboardActionListener.onHorizontalSpaceSwipe(3)
+        assertEquals(5, cursor)
+        latinIME.mKeyboardActionListener.onHorizontalSpaceSwipe(1)
+        assertEquals(5, cursor)
+    }
+
+    @Test fun suggestionSpansAreStoredOnlyAfterResuming() {
+        val typed = SuggestedWordInfo("hello", "", 0, 0, null, 0, 0)
+        val alternative = SuggestedWordInfo("help", "", 0, 0, null, 0, 0)
+        val suggestions = SuggestedWords(ArrayList(listOf(typed, alternative)), null, typed,
+            true, false, false, SuggestedWords.INPUT_STYLE_TYPING, 0)
+        fun committedSuggestionSpanCount() = ShadowInputMethodService.committedTexts
+            .first { it.toString().startsWith("hello") }
+            .let { (it as? Spanned)?.getSpans(0, it.length, SuggestionSpan::class.java)?.size ?: 0 }
+
+        chainInput("hello")
+        inputLogic.setSuggestedWords(suggestions)
+        ShadowInputMethodService.committedTexts.clear()
+        input(' ')
+        assertEquals(0, committedSuggestionSpanCount())
+
+        setText("hello")
+        assertEquals(true, composer.isResumed)
+        inputLogic.setSuggestedWords(suggestions)
+        ShadowInputMethodService.committedTexts.clear()
+        input(' ')
+        assertEquals(1, committedSuggestionSpanCount())
+    }
+
+    // ------- helper functions ---------
+
+    // should be called before every test, so the same state is guaranteed
+    @BeforeTest
+    fun reset() {
+        // reset input connection & facilitator
+        currentScript = ScriptUtils.SCRIPT_LATIN
+        ShadowInputMethodService.reset()
+        lastAddedWord = ""
+
+        // reset settings
+        latinIME.prefs().edit { clear() }
+
+        setText("") // (re)sets selection and composing word
+    }
+
+    private fun chainInput(text: String) = text.forEach { input(it.code) }
+
+    private fun input(char: Char) = input(char.code)
+
+    private fun input(codePoint: Int) {
+        require(codePoint > 0) { "not a codePoint: $codePoint" }
+        val oldBefore = textBeforeCursor
+        val oldAfter = textAfterCursor
+        val insert = StringUtils.newSingleCodePointString(codePoint)
+        val phantomSpaceToInsert = if (spaceState == SpaceState.PHANTOM) " " else ""
+        val oldIsAtEnd = !composer.isCursorFrontOrMiddleOfComposingWord
+
+        latinIME.onEvent(Event.createEventForCodePointFromUnknownSource(codePoint))
+        handleMessages()
+
+        if (composer.combiningSpec.isEmpty() // check fails if a combiner merges symbols
+            && !(codePoint == Constants.CODE_SPACE && oldBefore.lastOrNull() == ' ') // check fails when 2 spaces are converted into a period
+            && !latinIME.mInputLogic.mSuggestedWords.mWillAutoCorrect // autocorrect obviously creates inconsistencies
+            ) {
+            if (phantomSpaceToInsert.isEmpty())
+                assertEquals(oldBefore + insert, textBeforeCursor)
+            else // in some cases autospace might be suppressed
+                assert(oldBefore + phantomSpaceToInsert + insert == textBeforeCursor || oldBefore + insert == textBeforeCursor)
+        }
+        assertEquals(oldAfter, textAfterCursor)
+        assertEquals(textBeforeCursor + textAfterCursor, getTextFromConnection())
+        if (composer.isComposingWord && (oldIsAtEnd || composer.combiningSpec.isEmpty()))
+            assertEquals(oldIsAtEnd, !composer.isCursorFrontOrMiddleOfComposingWord)
+        checkConnectionConsistency()
+    }
+
+    private fun functionalKeyPress(keyCode: Int) {
+        require(keyCode < 0) { "not a functional key code: $keyCode" }
+        latinIME.onEvent(Event.createSoftwareKeypressEvent(Event.NOT_A_CODE_POINT, keyCode, 0, Constants.NOT_A_COORDINATE, Constants.NOT_A_COORDINATE, false))
+        handleMessages()
+        checkConnectionConsistency()
+    }
+
+    // almost the same as codePoint input, but calls different latinIME function
+    private fun input(insert: String) {
+        val oldBefore = textBeforeCursor
+        val oldAfter = textAfterCursor
+        val phantomSpaceToInsert = if (spaceState == SpaceState.PHANTOM) " " else ""
+
+        latinIME.onTextInput(insert)
+        handleMessages()
+
+        if (phantomSpaceToInsert.isEmpty())
+            assertEquals(oldBefore + insert, textBeforeCursor)
+        else // in some cases autospace might be suppressed
+            assert(oldBefore + phantomSpaceToInsert + insert == textBeforeCursor || oldBefore + insert == textBeforeCursor)
+        assert(oldBefore + insert == textBeforeCursor || "$oldBefore $insert" == textBeforeCursor)
+        assertEquals(oldAfter, textAfterCursor)
+        assertEquals(textBeforeCursor + textAfterCursor, getTextFromConnection())
+        checkConnectionConsistency()
+    }
+
+    private fun getWordAtCursor() = connection.getWordRangeAtCursor(settingsValues.mSpacingAndPunctuations, currentScript)?.mWord
+
+    private fun setCursorPosition(start: Int, end: Int = start, weirdTextField: Boolean = false) {
+        val ei = EditorInfo()
+        ei.inputType = currentInputType
+        ei.initialSelStart = start
+        ei.initialSelEnd = end
+        // imeOptions should not matter
+
+        // adjust text in inputConnection first, otherwise fixLyingCursorPosition will move cursor
+        // to the end of the text
+        val fullText = textBeforeCursor + selectedText + textAfterCursor
+        assertEquals(fullText, getTextFromConnection())
+
+        // need to update ic before, otherwise when reloading text cache from ic, ric will load wrong text before cursor
+        val oldStart = selectionStart
+        val oldEnd = selectionEnd
+        selectionStart = start
+        selectionEnd = end
+        assertEquals(fullText, textBeforeCursor + selectedText + textAfterCursor)
+
+        latinIME.onUpdateSelection(oldStart, oldEnd, start, end, composingStart, composingEnd)
+        handleMessages()
+
+        if (weirdTextField) {
+            latinIME.mHandler.onStartInput(ei, true) // essentially does nothing
+            latinIME.mHandler.onStartInputView(ei, true) // does the thing
+            handleMessages()
+        }
+
+        assertEquals(fullText, getTextFromConnection())
+        assertEquals(start, selectionStart)
+        assertEquals(end, selectionEnd)
+        checkConnectionConsistency()
+    }
+
+    // assumes we have nothing selected
+    private fun getCursorPosition(): Int {
+        assertEquals(cursor, connection.expectedSelectionStart)
+        assertEquals(cursor, connection.expectedSelectionEnd)
+        return cursor
+    }
+
+    // just sets the text and starts input so connection it set up correctly
+    private fun setText(newText: String) {
+        ShadowInputMethodService.text = newText
+        selectionStart = newText.length
+        selectionEnd = selectionStart
+        composingStart = -1
+        composingStart = -1
+
+        // we need to start input to notify that something changed
+        // restarting is false, so this is seen as a new text field
+        val ei = EditorInfo()
+        ei.inputType = currentInputType
+        latinIME.mHandler.onStartInput(ei, false)
+        latinIME.mHandler.onStartInputView(ei, false)
+        handleMessages() // this is important so the composing span is set correctly
+        checkConnectionConsistency()
+    }
+
+    // like selecting a suggestion from strip
+    private fun pickSuggestion(suggestion: String) {
+        val info = SuggestedWordInfo(suggestion, "", 0, 0, null, 0, 0)
+        latinIME.pickSuggestionManually(info)
+        checkConnectionConsistency()
+    }
+
+    // only works when autocorrect is on, separator after word is required
+    private fun getAutocorrectedWithSpaceAfter(suggestion: String, typedWord: String?) {
+        val info = SuggestedWordInfo(suggestion, "", 0, 0, null, 0, 0)
+        val typedInfo = SuggestedWordInfo(typedWord, "", 0, 0, null, 0, 0)
+        val sw = SuggestedWords(ArrayList(listOf(typedInfo, info)), null, typedInfo, false, true, false, 0, 0)
+        latinIME.mInputLogic.setSuggestedWords(sw) // this prepares for autocorrect
+        input(' ')
+        checkConnectionConsistency()
+    }
+
+    private fun glideTypingInput(word: String) {
+        val info = SuggestedWordInfo(word, "", 0, 0, null, 0, 0)
+        val sw = SuggestedWords(ArrayList(listOf(info)), null, info, true, false, false, 0, 0)
+        latinIME.mInputLogic.onUpdateTailBatchInputCompleted(settingsValues, sw, KeyboardSwitcher.getInstance())
+    }
+
+    private fun checkConnectionConsistency() {
+        // RichInputConnection only has composing text up to cursor, but InputConnection has full composing text
+        val expectedConnectionComposingText = if (composingStart == -1 || composingEnd == -1) ""
+        else text.substring(composingStart, min(composingEnd, selectionEnd))
+        assert(composingText.startsWith(expectedConnectionComposingText))
+        // RichInputConnection only returns text up to cursor
+        val textBeforeComposingText = if (composingStart == -1) textBeforeCursor else text.substring(0, composingStart)
+
+        println("consistency: $selectionStart, ${connection.expectedSelectionStart}, $selectionEnd, ${connection.expectedSelectionEnd}, $textBeforeComposingText, " +
+                "$connectionTextBeforeComposingText, $composingText, $connectionComposingText, $textBeforeCursor, ${connection.getTextBeforeCursor(textBeforeCursor.length, 0)}" +
+                ", $textAfterCursor, ${connection.getTextAfterCursor(textAfterCursor.length, 0)}")
+        assertEquals(selectionStart, connection.expectedSelectionStart)
+        assertEquals(selectionEnd, connection.expectedSelectionEnd)
+        assertEquals(textBeforeComposingText, connectionTextBeforeComposingText)
+        assertEquals(expectedConnectionComposingText, connectionComposingText)
+        assertEquals(textBeforeCursor, connection.getTextBeforeCursor(textBeforeCursor.length, 0).toString())
+        assertEquals(textAfterCursor, connection.getTextAfterCursor(textAfterCursor.length, 0).toString())
+    }
+
+    private fun getTextFromConnection() =
+        connection.getTextBeforeCursor(100, 0).toString() + (connection.getSelectedText(0) ?: "") + connection.getTextAfterCursor(100, 0)
+
+    private fun setInputType(inputType: Int) {
+        // set text to actually apply input type
+        currentInputType = inputType
+        setText(text)
+    }
+
+    // always need to handle messages for proper simulation
+    private fun handleMessages() {
+        while (messages.isNotEmpty()) {
+            latinIME.mHandler.handleMessage(messages.first())
+            messages.removeAt(0)
+        }
+        while (delayedMessages.isNotEmpty()) {
+            val msg = delayedMessages.first()
+            if (msg.what != 2) // MSG_UPDATE_SUGGESTION_STRIP, we want to ignore it because it's irrelevant and has a 500 ms timeout
+                latinIME.mHandler.handleMessage(delayedMessages.first())
+            delayedMessages.removeAt(0)
+            // delayed messages may post further messages, handle before next delayed message
+            while (messages.isNotEmpty()) {
+                latinIME.mHandler.handleMessage(messages.first())
+                messages.removeAt(0)
+            }
+        }
+        assertEquals(0, messages.size)
+        assertEquals(0, delayedMessages.size)
+    }
+
+}
+
+private var currentScript = ScriptUtils.SCRIPT_LATIN
+private val messages = mutableListOf<Message>() // for latinIME / ShadowInputMethodService
+private val delayedMessages = mutableListOf<Message>() // for latinIME / ShadowInputMethodService
+
+// Shadows are handled by Robolectric. @Implementation overrides built-in functionality.
+// This is used for avoiding crashes (LocaleManagerCompat, InputMethodManager, KeyboardSwitcher)
+// and for simulating system stuff (InputMethodService for controlling the InputConnection, which
+// more or less is the contents of the text field), and for setting the current script in
+// KeyboardSwitcher without having to care about InputMethodSubtypes
+
+@Implements(Handler::class)
+class ShadowHandler {
+    @Implementation
+    fun sendMessage(message: Message) {
+        messages.add(message)
+    }
+    @Implementation
+    fun sendMessageDelayed(message: Message, delay: Long) {
+        delayedMessages.add(message)
+    }
+}
+
+@Implements(KeyboardSwitcher::class)
+class ShadowKeyboardSwitcher {
+    @Implementation
+    // basically only needed for null check
+    fun getMainKeyboardView(): MainKeyboardView = Mockito.mock(MainKeyboardView::class.java)
+    @Implementation
+    // only affects view
+    fun setKeyboard(keyboardId: Int, toggleState: KeyboardSwitcher.KeyboardSwitchState) = Unit
+    @Implementation
+    // only affects view
+    fun setOneHandedModeEnabled(enabled: Boolean) = Unit
+    @Implementation
+    fun getCurrentKeyboardScript() = currentScript
+}
+
+@Implements(DictionaryFacilitatorImpl::class)
+class ShadowFacilitator2 {
+    @Implementation
+    fun addToUserHistory(suggestion: String, wasAutoCapitalized: Boolean,
+                         ngramContext: NgramContext, timeStampInSeconds: Long,
+                         blockPotentiallyOffensive: Boolean) {
+        lastAddedWord = suggestion
+    }
+    companion object {
+        var lastAddedWord = ""
+    }
+}
