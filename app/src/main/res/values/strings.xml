@@ -1364,4 +1364,6 @@ New dictionary:
     <string name="collapse_repeated_letters_summary">Suggest “so” when you type “sooooo”</string>
     <string name="forget_rejected_autocorrect">Forget undone corrections</string>
     <string name="forget_rejected_autocorrect_summary">Words remembered: %d. Tap to let them be corrected again</string>
+    <string name="key_press_animation">Key animations</string>
+    <string name="key_press_animation_summary">Springy feedback when pressing keys and smooth transitions. Also off when animations are disabled in the system settings</string>
 </resources>

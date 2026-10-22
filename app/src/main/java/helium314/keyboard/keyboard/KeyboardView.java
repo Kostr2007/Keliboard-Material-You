@@ -29,6 +29,7 @@ import androidx.annotation.Nullable;
 
 import helium314.keyboard.keyboard.emoji.EmojiPageKeyboardView;
 import helium314.keyboard.keyboard.internal.KeyDrawParams;
+import helium314.keyboard.keyboard.internal.KeyPressAnimator;
 import helium314.keyboard.keyboard.internal.KeyVisualAttributes;
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.KeyCode;
 import helium314.keyboard.latin.R;
@@ -78,6 +79,13 @@ public class KeyboardView extends View {
     private Keyboard mKeyboard;
     @NonNull
     private final KeyDrawParams mKeyDrawParams = new KeyDrawParams();
+    /** spring animations for pressing and releasing keys, only visual */
+    @NonNull
+    protected final KeyPressAnimator mKeyPressAnimator = new KeyPressAnimator(this::invalidateKey);
+    // how much a fully pressed key shrinks, relative to its smaller side
+    private static final float KEY_PRESS_SHRINK_RATIO = 0.08f;
+    // a key bouncing back may grow a tiny bit, but must not cover neighbouring keys
+    private static final float KEY_PRESS_MAX_SCALE = 1.01f;
 
     // Drawing
     /** True if all keys should be drawn */
@@ -185,6 +193,7 @@ public class KeyboardView extends View {
         }
 
         mKeyboard = keyboard;
+        mKeyPressAnimator.setEnabled(Settings.getValues().mKeyPressAnimation);
         mKeyScaleForText = (float) Math.sqrt(1 / Settings.getValues().mKeyboardHeightScale);
         int scale = Math.min(2 * keyboard.mMostCommonKeyWidth, keyboard.mMostCommonKeyHeight - keyboard.mVerticalGap);
         int scaledKeySize = (int) (scale * mKeyScaleForText);
@@ -341,13 +350,39 @@ public class KeyboardView extends View {
         final KeyDrawParams params = mKeyDrawParams.mayCloneAndUpdateParams((int) (key.getHeight() * mKeyScaleForText), attr);
         params.mAnimAlpha = Constants.Color.ALPHA_OPAQUE;
 
+        // pressed keys shrink a bit and bounce back on release, see KeyPressAnimator
+        final float depth = mKeyPressAnimator.getDepth(key);
+        final boolean scaled = depth != 0f && !key.isSpacer();
+        if (scaled) {
+            final float width = key.getDrawWidth();
+            final float height = key.getHeight();
+            final float inset = depth * KEY_PRESS_SHRINK_RATIO * 0.5f * Math.min(width, height);
+            final float scaleX = Math.min(KEY_PRESS_MAX_SCALE, 1f - 2 * inset / width);
+            final float scaleY = Math.min(KEY_PRESS_MAX_SCALE, 1f - 2 * inset / height);
+            canvas.save();
+            canvas.scale(scaleX, scaleY, width * 0.5f, height * 0.5f);
+        }
+
         if (!key.isSpacer()) {
-            final Drawable background = key.selectBackgroundDrawable(
-                    mKeyBackground, mFunctionalKeyBackground, mSpacebarBackground, mActionKeyBackground);
-            onDrawKeyBackground(key, canvas, background);
+            final float highlight = mKeyPressAnimator.getHighlight(key);
+            if (highlight > 0f && highlight < 1f && !key.isPressedOrLocked()) {
+                // fade out the pressed background after release
+                onDrawKeyBackground(key, canvas, key.selectBackgroundDrawable(
+                        mKeyBackground, mFunctionalKeyBackground, mSpacebarBackground, mActionKeyBackground, false));
+                final Drawable pressedBackground = key.selectBackgroundDrawable(
+                        mKeyBackground, mFunctionalKeyBackground, mSpacebarBackground, mActionKeyBackground, true);
+                pressedBackground.setAlpha(Math.round(highlight * Constants.Color.ALPHA_OPAQUE));
+                onDrawKeyBackground(key, canvas, pressedBackground);
+                pressedBackground.setAlpha(Constants.Color.ALPHA_OPAQUE);
+            } else {
+                final Drawable background = key.selectBackgroundDrawable(
+                        mKeyBackground, mFunctionalKeyBackground, mSpacebarBackground, mActionKeyBackground);
+                onDrawKeyBackground(key, canvas, background);
+            }
         }
         onDrawKeyTopVisuals(key, canvas, paint, params);
 
+        if (scaled) canvas.restore();
         canvas.translate(-keyDrawX, -keyDrawY);
     }
 
@@ -632,6 +667,7 @@ public class KeyboardView extends View {
     @Override
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
+        mKeyPressAnimator.clear();
         freeOffscreenBuffer();
     }
 

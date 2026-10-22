@@ -65,6 +65,7 @@ fun AppearanceScreen(
         if (dayNightMode) Settings.PREF_THEME_COLORS_NIGHT else null,
         Settings.PREF_THEME_STYLE,
         Settings.PREF_THEME_KEY_BORDERS,
+        Settings.PREF_KEY_PRESS_ANIMATION,
         Settings.PREF_ICON_STYLE,
         Settings.PREF_CUSTOM_ICON_NAMES,
         Settings.PREF_NAVBAR_COLOR,
@@ -109,6 +110,9 @@ fun AppearanceScreen(
 }
 
 fun createAppearanceSettings(context: Context) = listOf(
+    Setting(context, Settings.PREF_KEY_PRESS_ANIMATION, R.string.key_press_animation, R.string.key_press_animation_summary) {
+        SwitchPreference(it, Defaults.PREF_KEY_PRESS_ANIMATION) { KeyboardSwitcher.getInstance().setThemeNeedsReload() }
+    },
     Setting(context, Settings.PREF_THEME_STYLE, R.string.theme_style) { setting ->
         val ctx = LocalContext.current
         val prefs = ctx.prefs()

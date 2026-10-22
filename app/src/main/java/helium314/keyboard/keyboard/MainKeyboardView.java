@@ -38,6 +38,8 @@ import helium314.keyboard.keyboard.internal.GestureFloatingTextDrawingPreview;
 import helium314.keyboard.keyboard.internal.GestureTrailsDrawingPreview;
 import helium314.keyboard.keyboard.internal.KeyDrawParams;
 import helium314.keyboard.keyboard.internal.KeyPreviewChoreographer;
+import helium314.keyboard.keyboard.internal.SpringInterpolator;
+import helium314.keyboard.keyboard.internal.SpringParams;
 import helium314.keyboard.keyboard.internal.KeyPreviewDrawParams;
 import helium314.keyboard.keyboard.internal.KeyPreviewView;
 import helium314.keyboard.keyboard.internal.PopupKeySpec;
@@ -308,7 +310,10 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
     public void setKeyboard(@NonNull final Keyboard keyboard) {
         // Remove any pending messages, except dismissing preview and key repeat.
         mTimerHandler.cancelLongPressTimers();
+        final Keyboard oldKeyboard = getKeyboard();
         super.setKeyboard(keyboard);
+        if (oldKeyboard != null)
+            animateKeyboardChange(oldKeyboard.mId.getElement(), keyboard);
         mKeyDetector.setKeyboard(
                 keyboard, -getPaddingLeft(), -getPaddingTop() + getVerticalCorrection());
         PointerTracker.setKeyDetector(mKeyDetector);
@@ -327,6 +332,36 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
             mAccessibilityDelegate = null;
         }
     }
+
+    /**
+     * Visual feedback when the keyboard changes: the shift key bounces when caps lock is toggled,
+     * and the keys fade in quickly when switching e.g. between letters and symbols.
+     * This is only visual, input is handled by the new keyboard right away.
+     */
+    private void animateKeyboardChange(@NonNull final KeyboardElement oldElement, @NonNull final Keyboard keyboard) {
+        if (!mKeyPressAnimator.getEnabled()) return;
+        final KeyboardElement newElement = keyboard.mId.getElement();
+        if (oldElement == newElement) return;
+        final boolean wasLocked = oldElement == KeyboardElement.ALPHABET_SHIFT_LOCKED;
+        final boolean isLocked = newElement == KeyboardElement.ALPHABET_SHIFT_LOCKED;
+        if (oldElement.isAlphabet() && newElement.isAlphabet()) {
+            if (wasLocked != isLocked) {
+                for (final Key key : keyboard.getSortedKeys()) {
+                    if (key.isShift()) mKeyPressAnimator.pulse(key);
+                }
+            }
+            return;
+        }
+        animate().cancel();
+        setAlpha(KEYBOARD_SWITCH_START_ALPHA);
+        animate().alpha(1f)
+                .setInterpolator(KEYBOARD_SWITCH_INTERPOLATOR)
+                .setDuration(KEYBOARD_SWITCH_INTERPOLATOR.getDurationMillis())
+                .start();
+    }
+
+    private static final float KEYBOARD_SWITCH_START_ALPHA = 0.4f;
+    private static final SpringInterpolator KEYBOARD_SWITCH_INTERPOLATOR = new SpringInterpolator(SpringParams.DEFAULT_EFFECTS);
 
     /**
      * Enables or disables the key preview popup. This is a popup that shows a magnified
@@ -363,6 +398,7 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
     @Override
     public void onKeyPressed(@NonNull final Key key, final boolean withPreview) {
         key.onPressed();
+        mKeyPressAnimator.press(key);
         invalidateKey(key);
 
         final Keyboard keyboard = getKeyboard();
@@ -393,6 +429,7 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
     @Override
     public void onKeyReleased(@NonNull final Key key, final boolean withAnimation) {
         key.onReleased();
+        mKeyPressAnimator.release(key);
         invalidateKey(key);
         if (key.hasPreview()) {
             if (withAnimation) {
@@ -490,6 +527,9 @@ public final class MainKeyboardView extends KeyboardView implements DrawingProxy
     @Override
     protected void onDetachedFromWindow() {
         setInlineSuggestionsOnTop(true);
+        // never leave the keyboard partially transparent because an animation was interrupted
+        animate().cancel();
+        setAlpha(1f);
         super.onDetachedFromWindow();
         mDrawingPreviewPlacerView.removeAllViews();
     }

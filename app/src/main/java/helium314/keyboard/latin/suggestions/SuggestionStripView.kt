@@ -45,6 +45,8 @@ import helium314.keyboard.latin.define.DebugFlags
 import helium314.keyboard.latin.settings.DebugSettings
 import helium314.keyboard.latin.settings.Defaults
 import helium314.keyboard.latin.settings.Settings
+import helium314.keyboard.keyboard.internal.SpringInterpolator
+import helium314.keyboard.keyboard.internal.SpringParams
 import helium314.keyboard.latin.utils.ToolbarKey
 import helium314.keyboard.latin.utils.ToolbarMode
 import helium314.keyboard.latin.utils.addPinnedKey
@@ -80,6 +82,8 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
 
     private val moreSuggestionsContainer: View
     private val wordViews = ArrayList<TextView>()
+    private val fadeInterpolator = SpringInterpolator(SpringParams.DEFAULT_EFFECTS)
+    private val flipInterpolator = SpringInterpolator(SpringParams.FAST_SPATIAL)
     private val debugInfoViews = ArrayList<TextView>()
     private val dividerViews = ArrayList<View>()
 
@@ -222,6 +226,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
     }
 
     fun setToolbarVisibility(toolbarVisible: Boolean) {
+        val changed = toolbarContainer.isVisible != toolbarVisible
         pinnedKeys.isVisible = !toolbarVisible
         suggestionsStrip.isVisible = !toolbarVisible
         toolbarContainer.isVisible = toolbarVisible
@@ -232,10 +237,33 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
             }
         }
 
-        toolbarExpandKey.scaleX = (if (toolbarVisible) -1f else 1f) * direction
+        val expandKeyScale = (if (toolbarVisible) -1f else 1f) * direction
+        if (changed && animationsEnabled()) {
+            // cross-fade between toolbar and suggestions, the expand key flips around with a small bounce
+            if (toolbarVisible) fadeIn(toolbarContainer)
+            else {
+                fadeIn(suggestionsStrip)
+                fadeIn(pinnedKeys)
+            }
+            toolbarExpandKey.animate().cancel()
+            toolbarExpandKey.animate().scaleX(expandKeyScale)
+                .setInterpolator(flipInterpolator).setDuration(flipInterpolator.durationMillis).start()
+        } else {
+            toolbarExpandKey.animate().cancel()
+            toolbarExpandKey.scaleX = expandKeyScale
+        }
+    }
+
+    private fun animationsEnabled() = Settings.getValues()?.mKeyPressAnimation == true
+
+    private fun fadeIn(view: View, startAlpha: Float = 0f) {
+        view.animate().cancel()
+        view.alpha = startAlpha
+        view.animate().alpha(1f).setInterpolator(fadeInterpolator).setDuration(fadeInterpolator.durationMillis).start()
     }
 
     fun setSuggestions(suggestions: SuggestedWords, isRtlLanguage: Boolean) {
+        val previousWords = wordViews.map { it.text?.toString() }
         clear()
         setRtl(isRtlLanguage)
         suggestedWords = suggestions
@@ -244,6 +272,20 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         )
         isExternalSuggestionVisible = false
         updateKeys()
+        animateChangedWords(previousWords)
+    }
+
+    /** words that changed fade in quickly, unchanged words stay as they are, so the strip doesn't flicker */
+    private fun animateChangedWords(previousWords: List<String?>) {
+        val animate = animationsEnabled()
+        wordViews.forEachIndexed { index, view ->
+            view.animate().cancel()
+            view.alpha = 1f
+            if (!animate || view.parent == null) return@forEachIndexed
+            val word = view.text?.toString()
+            if (!word.isNullOrEmpty() && word != previousWords.getOrNull(index))
+                fadeIn(view, CHANGED_WORD_START_ALPHA)
+        }
     }
 
     fun setExternalSuggestionView(view: View?, addCloseButton: Boolean) {
@@ -538,6 +580,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
     }
 
     companion object {
+        private const val CHANGED_WORD_START_ALPHA = 0.35f
         @JvmField
         var DEBUG_SUGGESTIONS = false
         private const val DEBUG_INFO_TEXT_SIZE_IN_DIP = 6.5f

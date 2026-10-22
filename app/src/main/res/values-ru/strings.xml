@@ -590,4 +590,6 @@
     <string name="collapse_repeated_letters_summary">Предлагать «да» при вводе «дааааа»</string>
     <string name="forget_rejected_autocorrect">Забыть отменённые исправления</string>
     <string name="forget_rejected_autocorrect_summary">Запомнено слов: %d. Нажмите, чтобы снова разрешить их исправление</string>
+    <string name="key_press_animation">Анимация клавиш</string>
+    <string name="key_press_animation_summary">Пружинный отклик при нажатии и плавные переходы. Также отключается, если анимации выключены в настройках системы</string>
 </resources>

@@ -155,6 +155,8 @@ public class SettingsValues {
     public final boolean mBackspaceRevertsAutocorrect;
     public final boolean mLearnRejectedAutocorrect;
     public final boolean mFixDoubleCaps;
+    /** spring animations on the keyboard, false if disabled by the user or the system (animator duration scale 0) */
+    public final boolean mKeyPressAnimation;
     public final boolean mCollapseRepeatedLetters;
     public final boolean mAutoCorrectShortcuts;
     public final boolean mSuggestionsEnabled;
@@ -241,6 +243,8 @@ public class SettingsValues {
         mBackspaceRevertsAutocorrect = prefs.getBoolean(Settings.PREF_BACKSPACE_REVERTS_AUTOCORRECT, Defaults.PREF_BACKSPACE_REVERTS_AUTOCORRECT);
         mLearnRejectedAutocorrect = prefs.getBoolean(Settings.PREF_LEARN_REJECTED_AUTOCORRECT, Defaults.PREF_LEARN_REJECTED_AUTOCORRECT);
         mFixDoubleCaps = prefs.getBoolean(Settings.PREF_FIX_DOUBLE_CAPS, Defaults.PREF_FIX_DOUBLE_CAPS);
+        mKeyPressAnimation = prefs.getBoolean(Settings.PREF_KEY_PRESS_ANIMATION, Defaults.PREF_KEY_PRESS_ANIMATION)
+                && SettingsKt.areAnimationsEnabled(context);
         mCollapseRepeatedLetters = prefs.getBoolean(Settings.PREF_COLLAPSE_REPEATED_LETTERS, Defaults.PREF_COLLAPSE_REPEATED_LETTERS);
         RejectedAutocorrections.load(prefs);
         mBigramPredictionEnabled = prefs.getBoolean(Settings.PREF_BIGRAM_PREDICTIONS, Defaults.PREF_BIGRAM_PREDICTIONS);

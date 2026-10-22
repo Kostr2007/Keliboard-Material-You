@@ -34,6 +34,10 @@ fun createPrefKeyForBooleanSettings(prefix: String, index: Int, number: Int): St
 fun getTransitionAnimationScale(context: Context) =
     Global.getFloat(context.contentResolver, Global.TRANSITION_ANIMATION_SCALE, 1f)
 
+/** false if animations are turned off in the system settings (developer options or "remove animations") */
+fun areAnimationsEnabled(context: Context) =
+    Global.getFloat(context.contentResolver, Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
+
 fun isFloatingKeyboardEnabled(context: Context) =
     context.prefs().getBoolean(Settings.PREF_FLOATING_ENABLED_PREFIX + context.resources.displayMetrics.widthPixels, false)
 

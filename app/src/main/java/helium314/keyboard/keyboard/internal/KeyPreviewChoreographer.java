@@ -71,9 +71,12 @@ public final class KeyPreviewChoreographer {
         if (keyPreviewView == null) {
             return;
         }
-        // Dismiss preview
+        // Dismiss preview, without animation so fast typing is not slowed down
         mShowingKeyPreviewViews.remove(key);
         keyPreviewView.setTag(null);
+        keyPreviewView.animate().cancel();
+        keyPreviewView.setScaleX(1f);
+        keyPreviewView.setScaleY(1f);
         keyPreviewView.setVisibility(View.INVISIBLE);
         mFreeKeyPreviewViews.add(keyPreviewView);
     }
@@ -127,6 +130,23 @@ public final class KeyPreviewChoreographer {
     void showKeyPreview(final Key key, final KeyPreviewView keyPreviewView) {
         keyPreviewView.setVisibility(View.VISIBLE);
         mShowingKeyPreviewViews.put(key, keyPreviewView);
+        // the preview is fully visible right away and grows out of the key with a small bounce,
+        // pivot is the bottom center (set in placeKeyPreview)
+        keyPreviewView.animate().cancel();
+        if (Settings.getValues().mKeyPressAnimation) {
+            keyPreviewView.setScaleX(PREVIEW_START_SCALE);
+            keyPreviewView.setScaleY(PREVIEW_START_SCALE);
+            keyPreviewView.animate().scaleX(1f).scaleY(1f)
+                    .setInterpolator(PREVIEW_INTERPOLATOR)
+                    .setDuration(PREVIEW_INTERPOLATOR.getDurationMillis())
+                    .start();
+        } else {
+            keyPreviewView.setScaleX(1f);
+            keyPreviewView.setScaleY(1f);
+        }
     }
+
+    private static final float PREVIEW_START_SCALE = 0.7f;
+    private static final SpringInterpolator PREVIEW_INTERPOLATOR = new SpringInterpolator(SpringParams.FAST_SPATIAL);
 
 }

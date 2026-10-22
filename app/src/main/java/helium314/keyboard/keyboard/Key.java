@@ -932,6 +932,20 @@ public class Key implements Comparable<Key> {
             @NonNull final Drawable functionalKeyBackground,
             @NonNull final Drawable spacebarBackground,
             @NonNull final Drawable actionKeyBackground) {
+        return selectBackgroundDrawable(keyBackground, functionalKeyBackground, spacebarBackground,
+                actionKeyBackground, mPressed || mLocked);
+    }
+
+    /**
+     * Same as {@link #selectBackgroundDrawable(Drawable, Drawable, Drawable, Drawable)}, but for the given pressed
+     * state instead of the current one. Used for fading out the pressed background after release.
+     */
+    @NonNull
+    public final Drawable selectBackgroundDrawable(@NonNull final Drawable keyBackground,
+            @NonNull final Drawable functionalKeyBackground,
+            @NonNull final Drawable spacebarBackground,
+            @NonNull final Drawable actionKeyBackground,
+            final boolean pressed) {
         final Drawable background;
         if (hasActionKeyBackground()) {
             background = actionKeyBackground;
@@ -942,9 +956,14 @@ public class Key implements Comparable<Key> {
         } else {
             background = keyBackground;
         }
-        final int[] state = KeyBackgroundState.STATES[mBackgroundType].getState(mPressed || mLocked);
+        final int[] state = KeyBackgroundState.STATES[mBackgroundType].getState(pressed);
         background.setState(state);
         return background;
+    }
+
+    /** whether the key is currently drawn in pressed state because it's touched or locked */
+    public final boolean isPressedOrLocked() {
+        return mPressed || mLocked;
     }
 
     public final boolean hasActionKeyPopups() {

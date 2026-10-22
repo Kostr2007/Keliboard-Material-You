@@ -96,6 +96,9 @@ class DynamicColors(context: Context, override val themeStyle: String, override 
     private val keyText = getKeyText(context)
     private val keyHintText = getKeyHintText(context)
     private val spaceBarText = getSpaceBarText(context)
+    private val actionKey = getActionKey(context)
+    private val actionKeyPressed = getActionKeyPressed(context)
+    private val actionKeyIcon = getActionKeyIcon(context)
 
     private fun getAccent(context: Context) = if (isNight) ContextCompat.getColor(context, android.R.color.system_accent1_100)
         else ContextCompat.getColor(context, android.R.color.system_accent1_200)
@@ -105,12 +108,20 @@ class DynamicColors(context: Context, override val themeStyle: String, override 
         else ContextCompat.getColor(context, android.R.color.system_neutral1_50)
     private fun getKeyBackground(context: Context) = if (isNight) ContextCompat.getColor(context, android.R.color.system_neutral1_800)
         else  ContextCompat.getColor(context, android.R.color.system_neutral1_0)
-    private fun getFunctionalKey(context: Context) = if (isNight) ContextCompat.getColor(context, android.R.color.system_accent2_300)
+    // Material 3 roles: secondaryContainer for functional keys, primary / onPrimary for the action key,
+    // onSurface / onSurfaceVariant for key labels and hints
+    private fun getFunctionalKey(context: Context) = if (isNight) ContextCompat.getColor(context, android.R.color.system_accent2_700)
         else ContextCompat.getColor(context, android.R.color.system_accent2_100)
     private fun getKeyText(context: Context) = if (isNight) ContextCompat.getColor(context, android.R.color.system_neutral1_50)
-        else ContextCompat.getColor(context, android.R.color.system_accent3_900)
-    private fun getKeyHintText(context: Context) = if (isNight) keyText
-        else ContextCompat.getColor(context, android.R.color.system_accent3_700)
+        else ContextCompat.getColor(context, android.R.color.system_neutral1_900)
+    private fun getKeyHintText(context: Context) = if (isNight) ContextCompat.getColor(context, android.R.color.system_neutral2_200)
+        else ContextCompat.getColor(context, android.R.color.system_neutral2_700)
+    private fun getActionKey(context: Context) = if (isNight) ContextCompat.getColor(context, android.R.color.system_accent1_200)
+        else ContextCompat.getColor(context, android.R.color.system_accent1_600)
+    private fun getActionKeyPressed(context: Context) = if (isNight) ContextCompat.getColor(context, android.R.color.system_accent1_300)
+        else ContextCompat.getColor(context, android.R.color.system_accent1_700)
+    private fun getActionKeyIcon(context: Context) = if (isNight) ContextCompat.getColor(context, android.R.color.system_accent1_800)
+        else ContextCompat.getColor(context, android.R.color.system_accent1_0)
     private fun getSpaceBarText(context: Context) = if (isNight) ColorUtils.setAlphaComponent(ContextCompat.getColor(context, android.R.color.system_neutral1_50), 127)
         else ColorUtils.setAlphaComponent(ContextCompat.getColor(context, android.R.color.system_accent3_700), 127)
 
@@ -123,6 +134,7 @@ class DynamicColors(context: Context, override val themeStyle: String, override 
                 || keyText != getKeyText(context)
                 || keyHintText != getKeyHintText(context)
                 || spaceBarText != getSpaceBarText(context)
+                || actionKey != getActionKey(context)
 
     private val navBar: Int
     /** brightened or darkened variant of [background], to be used if exact background color would be
@@ -227,12 +239,19 @@ class DynamicColors(context: Context, override val themeStyle: String, override 
                 else pressedStateList(adjustedKeyBackground, keyBackground)
 
             functionalKeyStateList =
-                if (!isNight) pressedStateList(doubleAdjustedFunctionalKey, functionalKey)
-                else pressedStateList(functionalKey, doubleAdjustedKeyBackground)
+                if (themeStyle == STYLE_HOLO) {
+                    if (!isNight) pressedStateList(doubleAdjustedFunctionalKey, functionalKey)
+                    else pressedStateList(functionalKey, doubleAdjustedKeyBackground)
+                } else {
+                    if (!isNight) pressedStateList(doubleAdjustedFunctionalKey, functionalKey)
+                    else pressedStateList(brighten(functionalKey), functionalKey)
+                }
 
             actionKeyStateList =
-                if (!isNight) pressedStateList(gesture, accent)
-                else pressedStateList(doubleAdjustedAccent, accent)
+                if (themeStyle == STYLE_HOLO) {
+                    if (!isNight) pressedStateList(gesture, accent)
+                    else pressedStateList(doubleAdjustedAccent, accent)
+                } else pressedStateList(actionKeyPressed, actionKey)
 
             spaceBarStateList =
                 if (themeStyle == STYLE_HOLO) pressedStateList(spaceBar, spaceBar)
@@ -254,8 +273,7 @@ class DynamicColors(context: Context, override val themeStyle: String, override 
 
             actionKeyStateList =
                 if (themeStyle == STYLE_HOLO) pressedStateList(accent, Color.TRANSPARENT)
-                else if (!isNight) pressedStateList(gesture, accent)
-                else pressedStateList(doubleAdjustedAccent, accent)
+                else pressedStateList(actionKeyPressed, actionKey)
 
             spaceBarStateList =
                 if (!isNight) pressedStateList(gesture, adjustedFunctionalKey)
@@ -265,15 +283,13 @@ class DynamicColors(context: Context, override val themeStyle: String, override 
 
         actionKeyIconColorFilter = when {
             themeStyle == STYLE_HOLO -> keyTextFilter
-            // the white icon may not have enough contrast, and can't be adjusted by the user
-            needsDarkActionKeyIcon(accent) -> colorFilter(Color.DKGRAY)
-            else -> null
+            else -> colorFilter(actionKeyIcon) // onPrimary, always good contrast on primary
         }
     }
 
     override fun get(color: ColorType): Int = when (color) {
-        TOOL_BAR_KEY_ENABLED_BACKGROUND, EMOJI_CATEGORY_SELECTED, ACTION_KEY_BACKGROUND,
-        CLIPBOARD_PIN -> accent
+        TOOL_BAR_KEY_ENABLED_BACKGROUND, EMOJI_CATEGORY_SELECTED, CLIPBOARD_PIN -> accent
+        ACTION_KEY_BACKGROUND -> if (themeStyle == STYLE_HOLO) accent else actionKey
         AUTOFILL_BACKGROUND_CHIP, GESTURE_PREVIEW, POPUP_KEYS_BACKGROUND, MORE_SUGGESTIONS_BACKGROUND, KEY_PREVIEW_BACKGROUND -> adjustedBackground
         TOOL_BAR_EXPAND_KEY_BACKGROUND -> if (!isNight) accent else doubleAdjustedBackground
         GESTURE_TRAIL -> gesture
@@ -282,16 +298,17 @@ class DynamicColors(context: Context, override val themeStyle: String, override 
             EMOJI_SEARCH_TEXT, CLIPBOARD_SUGGESTION_ICON -> keyText
         KEY_HINT_TEXT -> keyHintText
         SPACE_BAR_TEXT -> spaceBarText
-        FUNCTIONAL_KEY_BACKGROUND, EMOJI_SEARCH_BACKGROUND -> if (!isNight) functionalKey else doubleAdjustedKeyBackground
+        FUNCTIONAL_KEY_BACKGROUND, EMOJI_SEARCH_BACKGROUND -> if (!isNight || themeStyle != STYLE_HOLO) functionalKey else doubleAdjustedKeyBackground
         SPACE_BAR_BACKGROUND -> spaceBar
         MORE_SUGGESTIONS_WORD_BACKGROUND, MAIN_BACKGROUND -> background
         KEY_BACKGROUND -> keyBackground
-        ACTION_KEY_POPUP_KEYS_BACKGROUND -> if (themeStyle == STYLE_HOLO) adjustedBackground else accent
+        ACTION_KEY_POPUP_KEYS_BACKGROUND -> if (themeStyle == STYLE_HOLO) adjustedBackground else actionKey
         STRIP_BACKGROUND -> if (!hasKeyBorders && themeStyle == STYLE_MATERIAL) adjustedBackground else background
         CLIPBOARD_SUGGESTION_BACKGROUND -> keyBackground
         NAVIGATION_BAR -> navBar
         MORE_SUGGESTIONS_HINT, SUGGESTED_WORD, SUGGESTION_TYPED_WORD, SUGGESTION_VALID_WORD -> adjustedKeyText
-        ACTION_KEY_ICON, TOOL_BAR_EXPAND_KEY -> Color.WHITE
+        ACTION_KEY_ICON -> if (themeStyle == STYLE_HOLO) Color.WHITE else actionKeyIcon
+        TOOL_BAR_EXPAND_KEY -> Color.WHITE
     }
 
     override fun setColor(drawable: Drawable, color: ColorType) {

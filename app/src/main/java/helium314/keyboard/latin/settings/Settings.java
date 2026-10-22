@@ -85,6 +85,7 @@ public final class Settings implements SharedPreferences.OnSharedPreferenceChang
     public static final String PREF_LEARN_REJECTED_AUTOCORRECT = "learn_rejected_autocorrect";
     public static final String PREF_REJECTED_AUTOCORRECT_WORDS = "rejected_autocorrect_words";
     public static final String PREF_FIX_DOUBLE_CAPS = "fix_double_caps";
+    public static final String PREF_KEY_PRESS_ANIMATION = "key_press_animation";
     public static final String PREF_COLLAPSE_REPEATED_LETTERS = "collapse_repeated_letters";
     public static final String PREF_CENTER_SUGGESTION_TEXT_TO_ENTER = "center_suggestion_text_to_enter";
     public static final String PREF_SHOW_SUGGESTIONS = "show_suggestions";

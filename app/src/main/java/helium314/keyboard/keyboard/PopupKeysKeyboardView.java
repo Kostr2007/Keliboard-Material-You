@@ -24,6 +24,9 @@ import helium314.keyboard.accessibility.PopupKeysKeyboardAccessibilityDelegate;
 import helium314.keyboard.event.HapticEvent;
 import helium314.keyboard.keyboard.emoji.EmojiViewCallback;
 import helium314.keyboard.keyboard.internal.KeyDrawParams;
+import helium314.keyboard.keyboard.internal.SpringInterpolator;
+import helium314.keyboard.keyboard.internal.SpringParams;
+import helium314.keyboard.latin.settings.Settings;
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.KeyCode;
 import helium314.keyboard.latin.R;
 import helium314.keyboard.latin.RichInputMethodManager;
@@ -174,6 +177,7 @@ public class PopupKeysKeyboardView extends KeyboardView implements PopupKeysPane
         int containerX = containerFinalX + CoordinateUtils.x(mCoordinates);
         container.setX(containerX);
         setTranslationX(panelFinalX - containerFinalX);
+        animatePanelAppearance(container, pointX - containerFinalX);
         controller.setLayoutGravity(layoutGravity);
 
         mOriginX = panelFinalX;
@@ -185,6 +189,30 @@ public class PopupKeysKeyboardView extends KeyboardView implements PopupKeysPane
             accessibilityDelegate.onShowPopupKeysKeyboard();
         }
     }
+
+    /**
+     * The panel grows out of the touched key with a small bounce. Only visual: touch coordinates
+     * are translated using the final layout position, so selecting keys works during the animation.
+     */
+    private static void animatePanelAppearance(final View container, final float pivotX) {
+        container.animate().cancel();
+        container.setPivotX(pivotX);
+        container.setPivotY(container.getMeasuredHeight());
+        if (!Settings.getValues().mKeyPressAnimation) {
+            container.setScaleX(1f);
+            container.setScaleY(1f);
+            return;
+        }
+        container.setScaleX(PANEL_START_SCALE);
+        container.setScaleY(PANEL_START_SCALE);
+        container.animate().scaleX(1f).scaleY(1f)
+                .setInterpolator(PANEL_INTERPOLATOR)
+                .setDuration(PANEL_INTERPOLATOR.getDurationMillis())
+                .start();
+    }
+
+    private static final float PANEL_START_SCALE = 0.8f;
+    private static final SpringInterpolator PANEL_INTERPOLATOR = new SpringInterpolator(SpringParams.FAST_SPATIAL);
 
     /**
      * Returns the default x coordinate for showing this panel.
@@ -277,11 +305,13 @@ public class PopupKeysKeyboardView extends KeyboardView implements PopupKeysPane
 
     private void updateReleaseKeyGraphics(final Key key) {
         key.onReleased();
+        mKeyPressAnimator.release(key);
         invalidateKey(key);
     }
 
     private void updatePressKeyGraphics(final Key key) {
         key.onPressed();
+        mKeyPressAnimator.press(key);
         invalidateKey(key);
     }
 
