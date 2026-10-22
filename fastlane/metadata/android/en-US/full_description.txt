@@ -1,0 +1,22 @@
+KeliBoard is a modern, actively maintained HeliBoard fork focused on stability, usability, and first-class language support.
+
+It is privacy-conscious, fully open source, and works offline without the internet permission.
+
+Optional recent screenshot suggestions are off by default. Enabling this feature requests access to all images on your device (storage access on Android 12 and earlier), although only recent screenshots are suggested. Selected-photo access alone is not sufficient. Images are processed locally; KeliBoard has no internet permission.
+
+Highlights:
+<ul>
+  <li>Fixes for long-standing keyboard, composition, emoji, and spacing issues</li>
+  <li>First-class Korean support, including Cheonjiin and Korean QWERTY layouts</li>
+  <li>Customizable layouts, themes, colors, icons, fonts, and background images</li>
+  <li>Dictionaries for suggestions and spell checking</li>
+  <li>Multilingual typing</li>
+  <li>Clipboard history</li>
+  <li>One-handed and split keyboard modes</li>
+  <li>Number pad</li>
+  <li>Backup and restore for settings and learned data</li>
+</ul>
+
+Korean is a flagship feature, not the limit of the project. KeliBoard remains a general-purpose keyboard for HeliBoard users in every language.
+
+KeliBoard is based on HeliBoard, which is based on AOSP and OpenBoard. Upstream attribution and licenses are preserved.
